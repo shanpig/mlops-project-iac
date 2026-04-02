@@ -100,7 +100,7 @@ spec:
           # Clone the repository
           git clone --depth 1 --filter=blob:none --no-tags --single-branch \
             --branch "{{inputs.parameters.branch}}" \
-            https://github.com/teaching-on-testbeds/gourmetgram-train.git .
+            https://github.com/teaching-on-testbeds/proj10-train.git .
           
           # Get current git commit
           GIT_COMMIT=$(git rev-parse HEAD)
@@ -112,14 +112,14 @@ spec:
           
           # Query registry for image manifest and config to get labels
           # First get the manifest to find the config digest
-          MANIFEST=$(curl -sf "http://${REGISTRY}/v2/gourmetgram-train/manifests/latest" \
+          MANIFEST=$(curl -sf "http://${REGISTRY}/v2/proj10-train/manifests/latest" \
             -H "Accept: application/vnd.docker.distribution.manifest.v2+json" 2>/dev/null || echo "")
           
           if [ -n "$MANIFEST" ]; then
             CONFIG_DIGEST=$(echo "$MANIFEST" | jq -r '.config.digest // empty' 2>/dev/null || echo "")
             if [ -n "$CONFIG_DIGEST" ]; then
               # Get the config blob which contains labels
-              CONFIG=$(curl -sf "http://${REGISTRY}/v2/gourmetgram-train/blobs/${CONFIG_DIGEST}" 2>/dev/null || echo "")
+              CONFIG=$(curl -sf "http://${REGISTRY}/v2/proj10-train/blobs/${CONFIG_DIGEST}" 2>/dev/null || echo "")
               if [ -n "$CONFIG" ]; then
                 IMAGE_COMMIT=$(echo "$CONFIG" | jq -r '.config.Labels["git.commit"] // empty' 2>/dev/null || echo "")
               fi
@@ -177,11 +177,11 @@ spec:
         - --opt
         - label:git.commit={{inputs.parameters.git-commit}}
         - --output
-        - type=image,name=registry.kube-system.svc.cluster.local:5000/gourmetgram-train:latest,push=true,registry.insecure=true
+        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-train:latest,push=true,registry.insecure=true
         - --export-cache
-        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/gourmetgram-train:buildcache,mode=max,registry.insecure=true
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-train:buildcache,mode=max,registry.insecure=true
         - --import-cache
-        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/gourmetgram-train:buildcache,registry.insecure=true
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-train:buildcache,registry.insecure=true
       resources:
         requests:
           memory: "2Gi"
@@ -209,7 +209,7 @@ spec:
         valueFrom:
           path: /var/run/argo/outputs/parameters/modelversion
     container:
-      image: registry.kube-system.svc.cluster.local:5000/gourmetgram-train:latest
+      image: registry.kube-system.svc.cluster.local:5000/proj10-train:latest
       command: [sh, -c]
       args:
         - |
@@ -227,7 +227,7 @@ spec:
           fi
       env:
         - name: MLFLOW_TRACKING_URI
-          value: "http://mlflow.gourmetgram-platform.svc.cluster.local:8000"
+          value: "http://mlflow.proj10-platform.svc.cluster.local:8000"
 
   - name: trigger-build
     inputs:
@@ -259,8 +259,8 @@ spec:
         set -eu
         export PIP_DISABLE_PIP_VERSION_CHECK=1
         pip install mlflow-skinny==3.9.0 > /dev/null
-        export MLFLOW_TRACKING_URI=http://mlflow.gourmetgram-platform.svc.cluster.local:8000
+        export MLFLOW_TRACKING_URI=http://mlflow.proj10-platform.svc.cluster.local:8000
 
-        python -c "import mlflow; client = mlflow.tracking.MlflowClient(); client.set_registered_model_alias(name='GourmetGramFood11Model', alias='development', version='{{inputs.parameters.model-version}}')"
+        python -c "import mlflow; client = mlflow.tracking.MlflowClient(); client.set_registered_model_alias(name='proj10Food11Model', alias='development', version='{{inputs.parameters.model-version}}')"
 
         echo "Updated MLflow development alias to version {{inputs.parameters.model-version}}"

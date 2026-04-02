@@ -71,7 +71,7 @@ spec:
         - --branch
         - workflow-init
         - --single-branch
-        - https://github.com/teaching-on-testbeds/gourmetgram.git
+        - https://github.com/teaching-on-testbeds/proj10.git
         - .
       volumeMounts:
       - name: workdir
@@ -100,11 +100,11 @@ spec:
         - --local
         - dockerfile=/mnt/workspace
         - --output
-        - type=image,name=registry.kube-system.svc.cluster.local:5000/gourmetgram-app:staging-1.0.0,push=true,registry.insecure=true
+        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-app:staging-1.0.0,push=true,registry.insecure=true
         - --export-cache
         - type=inline
         - --import-cache
-        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/gourmetgram-app:buildcache,registry.insecure=true
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-app:buildcache,registry.insecure=true
       resources:
         requests:
           memory: "2Gi"
@@ -137,5 +137,5 @@ spec:
       args:
         - copy
         - --insecure
-        - registry.kube-system.svc.cluster.local:5000/gourmetgram-app:{{inputs.parameters.src-tag}}
-        - registry.kube-system.svc.cluster.local:5000/gourmetgram-app:{{inputs.parameters.dst-tag}}
+        - registry.kube-system.svc.cluster.local:5000/proj10-app:{{inputs.parameters.src-tag}}
+        - registry.kube-system.svc.cluster.local:5000/proj10-app:{{inputs.parameters.dst-tag}}

@@ -8,13 +8,13 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: gourmetgram-gateway-controller
-  namespace: gourmetgram-platform
+  name: proj10-gateway-controller
+  namespace: proj10-platform
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: gourmetgram-gateway-controller
+  name: proj10-gateway-controller
 rules:
 - apiGroups: [""]
   resources: ["services","endpoints","pods","nodes","secrets","namespaces"]
@@ -32,32 +32,32 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: gourmetgram-gateway-controller
+  name: proj10-gateway-controller
 subjects:
 - kind: ServiceAccount
-  name: gourmetgram-gateway-controller
-  namespace: gourmetgram-platform
+  name: proj10-gateway-controller
+  namespace: proj10-platform
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: gourmetgram-gateway-controller
+  name: proj10-gateway-controller
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: gourmetgram-gateway-controller
-  namespace: gourmetgram-platform
+  name: proj10-gateway-controller
+  namespace: proj10-platform
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: gourmetgram-gateway
+      app: proj10-gateway
   template:
     metadata:
       labels:
-        app: gourmetgram-gateway
+        app: proj10-gateway
     spec:
-      serviceAccountName: gourmetgram-gateway-controller
+      serviceAccountName: proj10-gateway-controller
       containers:
       - name: traefik
         image: traefik:v3.1
@@ -71,11 +71,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: gourmetgram-gateway
-  namespace: gourmetgram-platform
+  name: proj10-gateway
+  namespace: proj10-platform
 spec:
   selector:
-    app: gourmetgram-gateway
+    app: proj10-gateway
   ports:
   - name: http
     port: 80
@@ -86,8 +86,8 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: Gateway
 metadata:
-  name: gourmetgram-gateway
-  namespace: gourmetgram-platform
+  name: proj10-gateway
+  namespace: proj10-platform
 spec:
   gatewayClassName: traefik
   listeners:
@@ -97,4 +97,3 @@ spec:
     allowedRoutes:
       namespaces:
         from: All
-

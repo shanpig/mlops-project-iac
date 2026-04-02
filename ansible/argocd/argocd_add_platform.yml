@@ -13,8 +13,8 @@
   become: yes
   vars:
     argocd_username: "admin"
-    repo_path: "https://github.com/teaching-on-testbeds/gourmetgram-iac.git"
-    app_name: "gourmetgram-platform"
+    repo_path: "https://github.com/shanpig/mlops-project-iac.git"
+    app_name: "proj10-platform"
     app_path: "k8s/platform"
     minio_access_key: "your-access-key"
     postgres_username: "user"
@@ -48,18 +48,18 @@
       set_fact:
         external_ip: "{{ ansible_all_ipv4_addresses | select('match', '^10\\.56\\..*') | list | first }}"
 
-    - name: Ensure gourmetgram-platform namespace exists
-      command: kubectl get namespace gourmetgram-platform
+    - name: Ensure proj10-platform namespace exists
+      command: kubectl get namespace proj10-platform
       register: ns_check
       failed_when: false
       changed_when: false
 
-    - name: Create gourmetgram-platform namespace if missing
+    - name: Create proj10-platform namespace if missing
       when: ns_check.rc != 0
-      command: kubectl create namespace gourmetgram-platform
+      command: kubectl create namespace proj10-platform
 
     - name: Check if MinIO secret already exists
-      command: kubectl get secret minio-credentials -n gourmetgram-platform
+      command: kubectl get secret minio-credentials -n proj10-platform
       register: minio_secret_check
       failed_when: false
       changed_when: false
@@ -73,13 +73,13 @@
       when: minio_secret_check.rc != 0
       command: >
         kubectl create secret generic minio-credentials
-        --namespace gourmetgram-platform
+        --namespace proj10-platform
         --from-literal=accesskey={{ minio_access_key }}
         --from-literal=secretkey={{ minio_secret_key }}
       register: minio_secret_create
 
     - name: Check if Postgres secret already exists
-      command: kubectl get secret postgres-credentials -n gourmetgram-platform
+      command: kubectl get secret postgres-credentials -n proj10-platform
       register: postgres_secret_check
       failed_when: false
       changed_when: false
@@ -93,7 +93,7 @@
       when: postgres_secret_check.rc != 0
       command: >
         kubectl create secret generic postgres-credentials
-        --namespace gourmetgram-platform
+        --namespace proj10-platform
         --from-literal=username={{ postgres_username }}
         --from-literal=password={{ postgres_password }}
         --from-literal=dbname={{ postgres_db }}

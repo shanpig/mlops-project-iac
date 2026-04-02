@@ -1,6 +1,6 @@
-# GourmetGram IaC repository
+# proj10 IaC repository
 
-Infrastructure-as-code for the GourmetGram MLOps course project. This repo provisions compute + networking, bootstraps a Kubernetes cluster, and deploys the platform/app components plus Argo Workflows templates.
+Infrastructure-as-code for the proj10 MLOps course project. This repo provisions compute + networking, bootstraps a Kubernetes cluster, and deploys the platform/app components plus Argo Workflows templates.
 
 ## Repo layout
 

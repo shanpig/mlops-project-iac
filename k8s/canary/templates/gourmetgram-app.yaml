@@ -2,21 +2,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: gourmetgram-app
-  namespace: gourmetgram-canary
+  name: proj10-app
+  namespace: proj10-canary
 
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: gourmetgram-app
+      app: proj10-app
   template:
     metadata:
       labels:
-        app: gourmetgram-app
+        app: proj10-app
     spec:
       containers:
-        - name: gourmetgram-app
+        - name: proj10-app
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
           ports:
             - containerPort: 8000
@@ -27,29 +27,28 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: gourmetgram-app
-  namespace: gourmetgram-canary
+  name: proj10-app
+  namespace: proj10-canary
 spec:
   selector:
-    app: gourmetgram-app
+    app: proj10-app
   ports:
     - port: {{ .Values.service.port }}
       targetPort: 8000
   externalIPs:
     - {{ .Values.service.externalIP }}
 ---
-# ReferenceGrant allows HTTPRoute in gourmetgram-platform to reference this Service
+# ReferenceGrant allows HTTPRoute in proj10-platform to reference this Service
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: ReferenceGrant
 metadata:
   name: allow-platform-httproute
-  namespace: gourmetgram-canary
+  namespace: proj10-canary
 spec:
   from:
   - group: gateway.networking.k8s.io
     kind: HTTPRoute
-    namespace: gourmetgram-platform
+    namespace: proj10-platform
   to:
   - group: ""
     kind: Service
-
