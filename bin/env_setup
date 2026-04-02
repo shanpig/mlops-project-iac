@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+
+set -e
+
+# Paths
+BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ENV_FILE="$BASE_DIR/.env"
+
+# ANSIBLE_DIR="$BASE_DIR/ansible"
+# ANSIBLE_CFG_FILENAME="ansible.cfg"
+# ANSIBLE_CFG_FILEPATH="$ANSIBLE_DIR/$ANSIBLE_CFG_FILENAME"
+# ANSIBLE_CFG_TEMPLATE_FILENAME="$ANSIBLE_CFG_FILENAME.template"
+# ANSIBLE_CFG_TEMPLATE_FILEPATH="$ANSIBLE_DIR/$ANSIBLE_CFG_TEMPLATE_FILENAME"
+
+# ANSIBLE_INVENTORY_FILENAME="inventory.yml"
+# ANSIBLE_INVENTORY_FILEPATH="$ANSIBLE_DIR/$ANSIBLE_INVENTORY_FILENAME"
+# ANSIBLE_INVENTORY_TEMPLATE_FILENAME="$ANSIBLE_INVENTORY_FILENAME.template"
+# ANSIBLE_INVENTORY_TEMPLATE_FILEPATH="$ANSIBLE_DIR/$ANSIBLE_INVENTORY_TEMPLATE_FILENAME"
+
+CLOUDS_DIR="$BASE_DIR/tf/kvm"
+CLOUDS_YAML_FILENAME="clouds.yaml"
+CLOUDS_YAML_FILEPATH="$CLOUDS_DIR/$CLOUDS_YAML_FILENAME"
+CLOUDS_YAML_TEMPLATE_FILENAME="$CLOUDS_YAML_FILENAME.template"
+CLOUDS_YAML_TEMPLATE_FILEPATH="$CLOUDS_DIR/$CLOUDS_YAML_TEMPLATE_FILENAME"
+
+SSH_CONFIG_TEMPLATE="$BASE_DIR/ssh-config.template"
+SSH_CONFIG_PATH="$HOME/.ssh/config"
+
+# Read variables from .env
+if [ ! -f "$ENV_FILE" ]; then
+    echo ".env file not found at $ENV_FILE"
+    exit 1
+fi
+
+# Utility for parsing .env values
+function get_env {
+    local key="$1"
+    grep "^${key}[[:space:]]*=" "$ENV_FILE" | sed -E "s/^${key}[[:space:]]*=[[:space:]]*\"?([^\"]*)\"?.*$/\1/"
+}
+
+FLOATING_IP=$(get_env FLOATING_IP)
+APPLICATION_CREDENTIAL_ID=$(get_env APPLICATION_CREDENTIAL_ID)
+APPLICATION_CREDENTIAL_SECRET=$(get_env APPLICATION_CREDENTIAL_SECRET)
+
+if [ -z "$FLOATING_IP" ] || [ -z "$APPLICATION_CREDENTIAL_ID" ] || [ -z "$APPLICATION_CREDENTIAL_SECRET" ]; then
+    echo "One or more required env variables missing."
+    exit 1
+fi
+
+# # Update ansible.cfg, replace "A.B.C.D" with the value of FLOATING_IP
+# echo "Stubbing env variables in $ANSIBLE_CFG_TEMPLATE_FILEPATH..."
+# if [ ! -f "$ANSIBLE_CFG_TEMPLATE_FILEPATH" ]; then
+#     echo "$ANSIBLE_CFG_FILENAME not found at $ANSIBLE_CFG_FILEPATH"
+#     exit 1
+# fi
+
+# TMP_CFG="${ANSIBLE_CFG_FILEPATH}.tmp"
+# sed "s/A\.B\.C\.D/$FLOATING_IP/g" "$ANSIBLE_CFG_TEMPLATE_FILEPATH" > "$TMP_CFG"
+# mv "$TMP_CFG" "$ANSIBLE_CFG_FILEPATH"
+
+# echo "Replaced A.B.C.D in $ANSIBLE_CFG_TEMPLATE_FILENAME."
+# echo "Saved as $ANSIBLE_CFG_FILENAME."
+
+# # Update inventory.yml, replace "YOUR_FLOATING_IP" with the value of FLOATING_IP
+# echo "Stubbing env variables in $ANSIBLE_INVENTORY_TEMPLATE_FILEPATH..."
+# if [ ! -f "$ANSIBLE_INVENTORY_TEMPLATE_FILEPATH" ]; then
+#     echo "$ANSIBLE_INVENTORY_TEMPLATE_FILENAME not found at $ANSIBLE_INVENTORY_TEMPLATE_FILEPATH"
+#     exit 1
+# fi
+
+# TMP_INVENTORY="${ANSIBLE_INVENTORY_FILEPATH}.tmp"
+# sed "s/YOUR_FLOATING_IP/$FLOATING_IP/g" "$ANSIBLE_INVENTORY_TEMPLATE_FILEPATH" > "$TMP_INVENTORY"
+# mv "$TMP_INVENTORY" "$ANSIBLE_INVENTORY_FILEPATH"
+
+# echo "Replaced YOUR_FLOATING_IP in $ANSIBLE_INVENTORY_TEMPLATE_FILENAME."
+# echo "Saved as $ANSIBLE_INVENTORY_FILENAME."
+
+# Update clouds.yaml, replace APPLICATION_CREDENTIAL_ID and APPLICATION_CREDENTIAL_SECRET
+
+echo "Stubbing env variables in $CLOUDS_YAML_TEMPLATE_FILEPATH..."
+if [ ! -f "$CLOUDS_YAML_TEMPLATE_FILEPATH" ]; then
+    echo "$CLOUDS_YAML_TEMPLATE_FILENAME not found at $CLOUDS_YAML_TEMPLATE_FILEPATH"
+    exit 1
+fi
+
+TMP_CLOUDS_YAML="${CLOUDS_YAML_FILEPATH}.tmp"
+sed \
+    -e "s/APPLICATION_CREDENTIAL_ID/$APPLICATION_CREDENTIAL_ID/g" \
+    -e "s/APPLICATION_CREDENTIAL_SECRET/$APPLICATION_CREDENTIAL_SECRET/g" \
+    "$CLOUDS_YAML_TEMPLATE_FILEPATH" > "$TMP_CLOUDS_YAML"
+mv "$TMP_CLOUDS_YAML" "$CLOUDS_YAML_FILEPATH"
+
+echo "Replaced APPLICATION_CREDENTIAL_ID in $CLOUDS_YAML_TEMPLATE_FILEPATH."
+echo "Replaced APPLICATION_CREDENTIAL_SECRET in $CLOUDS_YAML_TEMPLATE_FILEPATH."
+echo "Saved as $CLOUDS_YAML_FILEPATH."
+
+# New section: Update ~/.ssh/config from ssh-config.template, replace FLOATING_IP
+echo "Handling SSH config..."
+
+if [ -f "$SSH_CONFIG_PATH" ]; then
+    echo "WARNING: ~/.ssh/config already exists. Skipping SSH config update. Check the config in ssh-config.template and see what is your next step."
+else
+    if [ ! -f "$SSH_CONFIG_TEMPLATE" ]; then
+        echo "ssh-config.template not found at $SSH_CONFIG_TEMPLATE"
+        exit 1
+    fi
+    mkdir -p "$HOME/.ssh"
+    TMP_SSH_CONFIG="${SSH_CONFIG_PATH}.tmp"
+    sed "s/FLOATING_IP/$FLOATING_IP/g" "$SSH_CONFIG_TEMPLATE" > "$TMP_SSH_CONFIG"
+    mv "$TMP_SSH_CONFIG" "$SSH_CONFIG_PATH"
+    chmod 600 "$SSH_CONFIG_PATH"
+    echo "Created ~/.ssh/config from ssh-config.template."
+fi

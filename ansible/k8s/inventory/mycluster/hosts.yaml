@@ -1,17 +1,17 @@
 all:
   hosts:
     node1:
-      ansible_host: 192.168.1.11
+      ansible_host: node1
       ansible_user: cc
       ip: 192.168.1.11
       access_ip: 192.168.1.11
     node2:
-      ansible_host: 192.168.1.12
+      ansible_host: node2
       ansible_user: cc
       ip: 192.168.1.12
       access_ip: 192.168.1.12
     node3:
-      ansible_host: 192.168.1.13
+      ansible_host: node3
       ansible_user: cc
       ip: 192.168.1.13
       access_ip: 192.168.1.13
