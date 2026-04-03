@@ -116,7 +116,7 @@ spec:
         pip install mlflow-skinny > /dev/null
         export MLFLOW_TRACKING_URI=http://mlflow.proj10-platform.svc.cluster.local:8000
 
-        python -c "import mlflow; client = mlflow.tracking.MlflowClient(); client.set_registered_model_alias(name='proj10Food11Model', alias='staging-approved', version='{{inputs.parameters.model-version}}')"
+        python -c "import mlflow; client = mlflow.tracking.MlflowClient(); client.set_registered_model_alias(name='proj10AdventureLogModel', alias='staging-approved', version='{{inputs.parameters.model-version}}')"
 
         echo "✓ Model version {{inputs.parameters.model-version}} marked as 'staging-approved' in MLflow"
         echo "This version has successfully passed all staging tests"

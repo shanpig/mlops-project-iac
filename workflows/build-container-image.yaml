@@ -129,7 +129,7 @@ spec:
           import mlflow
           from mlflow.tracking import MlflowClient
 
-          NAME = "proj10Food11Model"
+          NAME = "proj10AdventureLogModel"
           VERSION = os.environ["MODEL_VERSION"]
 
           client = MlflowClient()
@@ -226,7 +226,7 @@ spec:
         export PIP_CACHE_DIR=/tmp/pip-cache
         pip install mlflow-skinny==3.9.0 > /dev/null
         export MLFLOW_TRACKING_URI=http://mlflow.proj10-platform.svc.cluster.local:8000
-        python -c "import mlflow; client = mlflow.tracking.MlflowClient(); client.set_registered_model_alias(name='proj10Food11Model', alias='staging', version='{{inputs.parameters.model-version}}')"
+        python -c "import mlflow; client = mlflow.tracking.MlflowClient(); client.set_registered_model_alias(name='proj10AdventureLogModel', alias='staging', version='{{inputs.parameters.model-version}}')"
       volumeMounts:
       - name: pip-cache
         mountPath: /tmp/pip-cache
