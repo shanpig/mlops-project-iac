@@ -7,12 +7,42 @@ spec:
   parentRefs:
   - name: proj10-gateway
   rules:
+  # Backend paths (API/auth/admin/static/media) route to Django backend.
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api
+    - path:
+        type: PathPrefix
+        value: /accounts
+    - path:
+        type: PathPrefix
+        value: /admin
+    - path:
+        type: PathPrefix
+        value: /media
+    - path:
+        type: PathPrefix
+        value: /static
+    - path:
+        type: PathPrefix
+        value: /protectedMedia
+    backendRefs:
+    - name: proj10-backend
+      namespace: proj10-production
+      port: 80
+      weight: 90
+    - name: proj10-backend
+      namespace: proj10-canary
+      port: 80
+      weight: 10
+  # Everything else goes to the frontend.
   - backendRefs:
-    - name: proj10-app
+    - name: proj10-frontend
       namespace: proj10-production
       port: 8080
       weight: 90
-    - name: proj10-app
+    - name: proj10-frontend
       namespace: proj10-canary
       port: 8081
       weight: 10

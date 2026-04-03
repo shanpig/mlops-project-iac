@@ -28,31 +28,82 @@ spec:
   templates:
   - name: buildkit-rootless-build-flow
     steps:
-      # Step 1: Clone the repository (shallow clone for speed)
+      # Step 1: Clone the AdventureLog app repository fork
       - - name: clone-repo
           template: git-clone
-      # Step 2: Build the container image and push to registry as staging-1.0.0
-      - - name: buildkit-build
+      # Step 2: Build frontend and backend images in parallel and push with staging tag
+      - - name: buildkit-build-frontend
           template: buildkit-rootless
-      # Step 3: Copy the same image to canary and production tags (runs in parallel, no rebuild)
-      - - name: tag-canary
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-adventurelog-frontend
+            - name: build-context
+              value: /mnt/workspace/frontend
+            - name: dockerfile-path
+              value: /mnt/workspace/frontend
+            - name: image-tag
+              value: staging-1.0.0
+            - name: cache-ref
+              value: proj10-adventurelog-frontend:buildcache
+        - name: buildkit-build-backend
+          template: buildkit-rootless
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-adventurelog-backend
+            - name: build-context
+              value: /mnt/workspace/backend
+            - name: dockerfile-path
+              value: /mnt/workspace/backend
+            - name: image-tag
+              value: staging-1.0.0
+            - name: cache-ref
+              value: proj10-adventurelog-backend:buildcache
+      # Step 3: Copy staging image tags to canary and production tags (no rebuild)
+      - - name: tag-frontend-canary
           template: copy-tag
           arguments:
             parameters:
+            - name: image-name
+              value: proj10-adventurelog-frontend
             - name: src-tag
               value: staging-1.0.0
             - name: dst-tag
               value: canary-1.0.0
-        - name: tag-production
+        - name: tag-frontend-production
           template: copy-tag
           arguments:
             parameters:
+            - name: image-name
+              value: proj10-adventurelog-frontend
+            - name: src-tag
+              value: staging-1.0.0
+            - name: dst-tag
+              value: production-1.0.0
+        - name: tag-backend-canary
+          template: copy-tag
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-adventurelog-backend
+            - name: src-tag
+              value: staging-1.0.0
+            - name: dst-tag
+              value: canary-1.0.0
+        - name: tag-backend-production
+          template: copy-tag
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-adventurelog-backend
             - name: src-tag
               value: staging-1.0.0
             - name: dst-tag
               value: production-1.0.0
 
-  # Template: Shallow clone of the git repository for faster checkout
+  # Template: Shallow clone of the app repository for faster checkout.
+  # Uses default branch so branch name changes do not break the workflow.
   - name: git-clone
     retryStrategy:
       limit: "5"
@@ -68,16 +119,13 @@ spec:
         - clone
         - --depth
         - "1"
-        - --branch
-        - workflow-init
-        - --single-branch
-        - https://github.com/teaching-on-testbeds/proj10.git
+        - https://github.com/shanpig/mlops-project-app.git
         - .
       volumeMounts:
       - name: workdir
         mountPath: /mnt/workspace
 
-  # Template: Build container image using buildkit (rootless, no docker daemon required)
+  # Template: Build image using buildkit (rootless, no docker daemon required)
   - name: buildkit-rootless
     retryStrategy:
       limit: "3"
@@ -85,6 +133,13 @@ spec:
       backoff:
         duration: "30s"
         factor: "2"
+    inputs:
+      parameters:
+      - name: image-name
+      - name: build-context
+      - name: dockerfile-path
+      - name: image-tag
+      - name: cache-ref
     container:
       image: moby/buildkit:rootless
       env:
@@ -96,15 +151,15 @@ spec:
         - --frontend
         - dockerfile.v0
         - --local
-        - context=/mnt/workspace
+        - context={{inputs.parameters.build-context}}
         - --local
-        - dockerfile=/mnt/workspace
+        - dockerfile={{inputs.parameters.dockerfile-path}}
         - --output
-        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-app:staging-1.0.0,push=true,registry.insecure=true
+        - type=image,name=registry.kube-system.svc.cluster.local:5000/{{inputs.parameters.image-name}}:{{inputs.parameters.image-tag}},push=true,registry.insecure=true
         - --export-cache
-        - type=inline
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/{{inputs.parameters.cache-ref}},mode=max,registry.insecure=true
         - --import-cache
-        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-app:buildcache,registry.insecure=true
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/{{inputs.parameters.cache-ref}},registry.insecure=true
       resources:
         requests:
           memory: "2Gi"
@@ -129,6 +184,7 @@ spec:
   - name: copy-tag
     inputs:
       parameters:
+      - name: image-name
       - name: src-tag
       - name: dst-tag
     container:
@@ -137,5 +193,5 @@ spec:
       args:
         - copy
         - --insecure
-        - registry.kube-system.svc.cluster.local:5000/proj10-app:{{inputs.parameters.src-tag}}
-        - registry.kube-system.svc.cluster.local:5000/proj10-app:{{inputs.parameters.dst-tag}}
+        - registry.kube-system.svc.cluster.local:5000/{{inputs.parameters.image-name}}:{{inputs.parameters.src-tag}}
+        - registry.kube-system.svc.cluster.local:5000/{{inputs.parameters.image-name}}:{{inputs.parameters.dst-tag}}
