@@ -31,7 +31,10 @@ spec:
       # Step 1: Clone the AdventureLog app repository fork
       - - name: clone-repo
           template: git-clone
-      # Step 2: Build frontend and backend images in parallel and push with staging tag
+      # Step 2: Resolve a unique app version from timestamp + commit SHA
+      - - name: resolve-version
+          template: resolve-version
+      # Step 3: Build frontend and backend images in parallel and push with staging version tag
       - - name: buildkit-build-frontend
           template: buildkit-rootless
           arguments:
@@ -43,7 +46,7 @@ spec:
             - name: dockerfile-path
               value: /mnt/workspace/frontend
             - name: image-tag
-              value: staging-1.0.0
+              value: staging-{{steps.resolve-version.outputs.parameters.app-version}}
             - name: cache-ref
               value: proj10-adventurelog-frontend:buildcache
         - name: buildkit-build-backend
@@ -57,10 +60,10 @@ spec:
             - name: dockerfile-path
               value: /mnt/workspace/backend
             - name: image-tag
-              value: staging-1.0.0
+              value: staging-{{steps.resolve-version.outputs.parameters.app-version}}
             - name: cache-ref
               value: proj10-adventurelog-backend:buildcache
-      # Step 3: Copy staging image tags to canary and production tags (no rebuild)
+      # Step 4: Copy staging version tags to canary/production version tags (no rebuild)
       - - name: tag-frontend-canary
           template: copy-tag
           arguments:
@@ -68,9 +71,9 @@ spec:
             - name: image-name
               value: proj10-adventurelog-frontend
             - name: src-tag
-              value: staging-1.0.0
+              value: staging-{{steps.resolve-version.outputs.parameters.app-version}}
             - name: dst-tag
-              value: canary-1.0.0
+              value: canary-{{steps.resolve-version.outputs.parameters.app-version}}
         - name: tag-frontend-production
           template: copy-tag
           arguments:
@@ -78,9 +81,9 @@ spec:
             - name: image-name
               value: proj10-adventurelog-frontend
             - name: src-tag
-              value: staging-1.0.0
+              value: staging-{{steps.resolve-version.outputs.parameters.app-version}}
             - name: dst-tag
-              value: production-1.0.0
+              value: production-{{steps.resolve-version.outputs.parameters.app-version}}
         - name: tag-backend-canary
           template: copy-tag
           arguments:
@@ -88,9 +91,9 @@ spec:
             - name: image-name
               value: proj10-adventurelog-backend
             - name: src-tag
-              value: staging-1.0.0
+              value: staging-{{steps.resolve-version.outputs.parameters.app-version}}
             - name: dst-tag
-              value: canary-1.0.0
+              value: canary-{{steps.resolve-version.outputs.parameters.app-version}}
         - name: tag-backend-production
           template: copy-tag
           arguments:
@@ -98,9 +101,70 @@ spec:
             - name: image-name
               value: proj10-adventurelog-backend
             - name: src-tag
-              value: staging-1.0.0
+              value: staging-{{steps.resolve-version.outputs.parameters.app-version}}
             - name: dst-tag
-              value: production-1.0.0
+              value: production-{{steps.resolve-version.outputs.parameters.app-version}}
+      # Step 5: Update stable aliases used by default environment values
+      - - name: tag-frontend-staging-latest
+          template: copy-tag
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-adventurelog-frontend
+            - name: src-tag
+              value: staging-{{steps.resolve-version.outputs.parameters.app-version}}
+            - name: dst-tag
+              value: staging-latest
+        - name: tag-frontend-canary-latest
+          template: copy-tag
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-adventurelog-frontend
+            - name: src-tag
+              value: canary-{{steps.resolve-version.outputs.parameters.app-version}}
+            - name: dst-tag
+              value: canary-latest
+        - name: tag-frontend-production-latest
+          template: copy-tag
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-adventurelog-frontend
+            - name: src-tag
+              value: production-{{steps.resolve-version.outputs.parameters.app-version}}
+            - name: dst-tag
+              value: production-latest
+        - name: tag-backend-staging-latest
+          template: copy-tag
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-adventurelog-backend
+            - name: src-tag
+              value: staging-{{steps.resolve-version.outputs.parameters.app-version}}
+            - name: dst-tag
+              value: staging-latest
+        - name: tag-backend-canary-latest
+          template: copy-tag
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-adventurelog-backend
+            - name: src-tag
+              value: canary-{{steps.resolve-version.outputs.parameters.app-version}}
+            - name: dst-tag
+              value: canary-latest
+        - name: tag-backend-production-latest
+          template: copy-tag
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-adventurelog-backend
+            - name: src-tag
+              value: production-{{steps.resolve-version.outputs.parameters.app-version}}
+            - name: dst-tag
+              value: production-latest
 
   # Template: Shallow clone of the app repository for faster checkout.
   # Uses default branch so branch name changes do not break the workflow.
@@ -124,6 +188,25 @@ spec:
       volumeMounts:
       - name: workdir
         mountPath: /mnt/workspace
+
+  - name: resolve-version
+    script:
+      image: alpine/git:v2.26.2
+      workingDir: /mnt/workspace
+      command: [sh]
+      source: |
+        set -eu
+        APP_SHA="$(git rev-parse --short HEAD)"
+        TS="$(date +%Y%m%d%H%M%S)"
+        echo "${TS}-${APP_SHA}" > /tmp/app-version.txt
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/workspace
+    outputs:
+      parameters:
+      - name: app-version
+        valueFrom:
+          path: /tmp/app-version.txt
 
   # Template: Build image using buildkit (rootless, no docker daemon required)
   - name: buildkit-rootless

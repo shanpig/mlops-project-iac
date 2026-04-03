@@ -2,7 +2,7 @@ frontend:
   replicaCount: 1
   image:
     repository: registry.kube-system.svc.cluster.local:5000/proj10-adventurelog-frontend
-    tag: production-1.0.0
+    tag: production-latest
   service:
     port: 8080
   resources:
@@ -17,7 +17,7 @@ backend:
   replicaCount: 1
   image:
     repository: registry.kube-system.svc.cluster.local:5000/proj10-adventurelog-backend
-    tag: production-1.0.0
+    tag: production-latest
   service:
     port: 8000
     nginxPort: 80

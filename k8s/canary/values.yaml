@@ -2,7 +2,7 @@ frontend:
   replicaCount: 1
   image:
     repository: registry.kube-system.svc.cluster.local:5000/proj10-adventurelog-frontend
-    tag: canary-1.0.0
+    tag: canary-latest
   service:
     port: 8081
   resources:
@@ -17,7 +17,7 @@ backend:
   replicaCount: 1
   image:
     repository: registry.kube-system.svc.cluster.local:5000/proj10-adventurelog-backend
-    tag: canary-1.0.0
+    tag: canary-latest
   service:
     port: 8000
     nginxPort: 80
