@@ -91,7 +91,7 @@ spec:
         - --single-branch
         - --branch
         - workflow
-        - https://github.com/teaching-on-testbeds/proj10.git
+        - https://github.com/shanpig/mlops-project-app.git
         - .
       volumeMounts:
       - name: workdir
