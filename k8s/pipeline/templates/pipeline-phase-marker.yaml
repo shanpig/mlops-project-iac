@@ -5,4 +5,4 @@ metadata:
   namespace: {{ .Values.namespace }}
 data:
   phase: {{ .Values.pipeline.phase | quote }}
-  description: "Pipeline chart scaffold is installed. Runtime services will be added in later phases."
+  description: "Current pipeline rollout marker. Services are introduced incrementally by phase."

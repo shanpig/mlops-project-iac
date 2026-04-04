@@ -1,0 +1,42 @@
+{{- if .Values.modelServer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.modelServer.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: {{ .Values.modelServer.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.modelServer.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.modelServer.name }}
+    spec:
+      containers:
+        - name: model-server
+          image: {{ .Values.modelServer.image.repository }}:{{ .Values.modelServer.image.tag }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - -listen=:{{ .Values.modelServer.service.port }}
+            - -text={{ .Values.modelServer.responseText | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.modelServer.service.port }}
+          resources:
+            {{- toYaml .Values.modelServer.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.modelServer.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: {{ .Values.modelServer.name }}
+  ports:
+    - name: http
+      port: {{ .Values.modelServer.service.port }}
+      targetPort: http
+{{- end }}

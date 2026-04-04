@@ -2,7 +2,7 @@ namespace: proj10-platform
 
 # Phase 1 scaffold values. Runtime services are added in later phases.
 pipeline:
-  phase: "phase-2-redpanda-redis"
+  phase: "phase-3-consumer-model-server"
 
 redpanda:
   enabled: true
@@ -45,3 +45,55 @@ redis:
     limits:
       cpu: "500m"
       memory: "1Gi"
+
+streamConsumer:
+  enabled: true
+  name: stream-consumer
+  replicaCount: 1
+  image:
+    repository: busybox
+    tag: "1.36"
+  env:
+    KAFKA_BOOTSTRAP_SERVERS: "redpanda:9092"
+    KAFKA_CONSUMER_GROUP: "proj10-stream-consumer"
+    KAFKA_TOPICS: "gourmetgram.views,gourmetgram.comments,gourmetgram.uploads,gourmetgram.flags"
+    REDIS_HOST: "redis"
+    REDIS_PORT: "6379"
+    REDIS_DB: "0"
+    MODERATION_TOPIC: "gourmetgram.moderation_requests"
+    LOG_LEVEL: "INFO"
+  command:
+    - sh
+    - -c
+  args:
+    - |
+      echo "[stream-consumer] placeholder started";
+      while true; do
+        nc -z redpanda 9092 && nc -z redis 6379 && echo "[stream-consumer] redpanda+redis reachable";
+        sleep 20;
+      done
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+
+modelServer:
+  enabled: true
+  name: model-server
+  replicaCount: 1
+  image:
+    repository: hashicorp/http-echo
+    tag: "1.0.0"
+  service:
+    port: 8000
+  responseText: "dummy-risk-model:ok:v0"
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"

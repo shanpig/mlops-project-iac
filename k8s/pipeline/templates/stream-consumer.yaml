@@ -1,0 +1,44 @@
+{{- if .Values.streamConsumer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.streamConsumer.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: {{ .Values.streamConsumer.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.streamConsumer.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.streamConsumer.name }}
+    spec:
+      containers:
+        - name: stream-consumer
+          image: {{ .Values.streamConsumer.image.repository }}:{{ .Values.streamConsumer.image.tag }}
+          imagePullPolicy: IfNotPresent
+          command:
+            {{- toYaml .Values.streamConsumer.command | nindent 12 }}
+          args:
+            {{- toYaml .Values.streamConsumer.args | nindent 12 }}
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: {{ .Values.streamConsumer.env.KAFKA_BOOTSTRAP_SERVERS | quote }}
+            - name: KAFKA_CONSUMER_GROUP
+              value: {{ .Values.streamConsumer.env.KAFKA_CONSUMER_GROUP | quote }}
+            - name: KAFKA_TOPICS
+              value: {{ .Values.streamConsumer.env.KAFKA_TOPICS | quote }}
+            - name: REDIS_HOST
+              value: {{ .Values.streamConsumer.env.REDIS_HOST | quote }}
+            - name: REDIS_PORT
+              value: {{ .Values.streamConsumer.env.REDIS_PORT | quote }}
+            - name: REDIS_DB
+              value: {{ .Values.streamConsumer.env.REDIS_DB | quote }}
+            - name: MODERATION_TOPIC
+              value: {{ .Values.streamConsumer.env.MODERATION_TOPIC | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.streamConsumer.env.LOG_LEVEL | quote }}
+          resources:
+            {{- toYaml .Values.streamConsumer.resources | nindent 12 }}
+{{- end }}
