@@ -1,0 +1,129 @@
+{{- if .Values.redpanda.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.redpanda.name }}-pvc
+  namespace: {{ .Values.namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.redpanda.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.redpanda.name }}-headless
+  namespace: {{ .Values.namespace }}
+spec:
+  clusterIP: None
+  selector:
+    app: {{ .Values.redpanda.name }}
+  ports:
+    - name: kafka
+      port: {{ .Values.redpanda.service.kafkaPort }}
+      targetPort: kafka
+    - name: schema
+      port: {{ .Values.redpanda.service.schemaRegistryPort }}
+      targetPort: schema
+    - name: proxy
+      port: {{ .Values.redpanda.service.pandaProxyPort }}
+      targetPort: proxy
+    - name: admin
+      port: {{ .Values.redpanda.service.adminPort }}
+      targetPort: admin
+    - name: rpc
+      port: {{ .Values.redpanda.service.rpcPort }}
+      targetPort: rpc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.redpanda.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: {{ .Values.redpanda.name }}
+  ports:
+    - name: kafka
+      port: {{ .Values.redpanda.service.kafkaPort }}
+      targetPort: kafka
+    - name: schema
+      port: {{ .Values.redpanda.service.schemaRegistryPort }}
+      targetPort: schema
+    - name: proxy
+      port: {{ .Values.redpanda.service.pandaProxyPort }}
+      targetPort: proxy
+    - name: admin
+      port: {{ .Values.redpanda.service.adminPort }}
+      targetPort: admin
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.redpanda.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  serviceName: {{ .Values.redpanda.name }}-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.redpanda.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.redpanda.name }}
+    spec:
+      containers:
+        - name: redpanda
+          image: {{ .Values.redpanda.image.repository }}:{{ .Values.redpanda.image.tag }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - redpanda
+            - start
+            - --kafka-addr
+            - internal://0.0.0.0:{{ .Values.redpanda.service.kafkaPort }}
+            - --advertise-kafka-addr
+            - internal://{{ .Values.redpanda.name }}:{{ .Values.redpanda.service.kafkaPort }}
+            - --pandaproxy-addr
+            - internal://0.0.0.0:{{ .Values.redpanda.service.pandaProxyPort }}
+            - --advertise-pandaproxy-addr
+            - internal://{{ .Values.redpanda.name }}:{{ .Values.redpanda.service.pandaProxyPort }}
+            - --schema-registry-addr
+            - internal://0.0.0.0:{{ .Values.redpanda.service.schemaRegistryPort }}
+            - --rpc-addr
+            - {{ .Values.redpanda.name }}:{{ .Values.redpanda.service.rpcPort }}
+            - --advertise-rpc-addr
+            - {{ .Values.redpanda.name }}:{{ .Values.redpanda.service.rpcPort }}
+            - --smp
+            - "1"
+            - --memory
+            - 1G
+            - --mode
+            - dev-container
+            - --set
+            - redpanda.log_retention_ms={{ .Values.redpanda.logRetentionMs }}
+            - --set
+            - redpanda.log_segment_ms={{ .Values.redpanda.logSegmentMs }}
+          ports:
+            - name: kafka
+              containerPort: {{ .Values.redpanda.service.kafkaPort }}
+            - name: schema
+              containerPort: {{ .Values.redpanda.service.schemaRegistryPort }}
+            - name: proxy
+              containerPort: {{ .Values.redpanda.service.pandaProxyPort }}
+            - name: admin
+              containerPort: {{ .Values.redpanda.service.adminPort }}
+            - name: rpc
+              containerPort: {{ .Values.redpanda.service.rpcPort }}
+          resources:
+            {{- toYaml .Values.redpanda.resources | nindent 12 }}
+          volumeMounts:
+            - name: redpanda-storage
+              mountPath: /var/lib/redpanda/data
+      volumes:
+        - name: redpanda-storage
+          persistentVolumeClaim:
+            claimName: {{ .Values.redpanda.name }}-pvc
+{{- end }}

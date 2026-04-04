@@ -2,4 +2,46 @@ namespace: proj10-platform
 
 # Phase 1 scaffold values. Runtime services are added in later phases.
 pipeline:
-  phase: "phase-1-scaffold"
+  phase: "phase-2-redpanda-redis"
+
+redpanda:
+  enabled: true
+  name: redpanda
+  image:
+    repository: docker.redpanda.com/redpandadata/redpanda
+    tag: v25.3.7
+  service:
+    kafkaPort: 9092
+    schemaRegistryPort: 8081
+    pandaProxyPort: 8082
+    adminPort: 9644
+    rpcPort: 33145
+  storage:
+    size: 20Gi
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+  logRetentionMs: "2592000000"
+  logSegmentMs: "3600000"
+
+redis:
+  enabled: true
+  name: redis
+  image:
+    repository: redis
+    tag: "7-alpine"
+  service:
+    port: 6379
+  storage:
+    size: 10Gi
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
