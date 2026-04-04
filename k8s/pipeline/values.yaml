@@ -1,0 +1,5 @@
+namespace: proj10-platform
+
+# Phase 1 scaffold values. Runtime services are added in later phases.
+pipeline:
+  phase: "phase-1-scaffold"

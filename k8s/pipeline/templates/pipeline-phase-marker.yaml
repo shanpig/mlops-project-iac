@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: proj10-pipeline-phase-marker
+  namespace: {{ .Values.namespace }}
+data:
+  phase: {{ .Values.pipeline.phase | quote }}
+  description: "Pipeline chart scaffold is installed. Runtime services will be added in later phases."

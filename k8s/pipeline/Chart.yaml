@@ -1,0 +1,4 @@
+apiVersion: v2
+name: proj10-pipeline
+version: 0.1.0
+description: proj10 Pipeline Runtime (Redpanda/Redis/Consumer/ModelServer/Airflow)
