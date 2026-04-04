@@ -93,9 +93,9 @@ spec:
             - --schema-registry-addr
             - internal://0.0.0.0:{{ .Values.redpanda.service.schemaRegistryPort }}
             - --rpc-addr
-            - {{ .Values.redpanda.name }}:{{ .Values.redpanda.service.rpcPort }}
+            - 0.0.0.0:{{ .Values.redpanda.service.rpcPort }}
             - --advertise-rpc-addr
-            - {{ .Values.redpanda.name }}:{{ .Values.redpanda.service.rpcPort }}
+            - {{ .Values.redpanda.name }}-0.{{ .Values.redpanda.name }}-headless.{{ .Values.namespace }}.svc.cluster.local:{{ .Values.redpanda.service.rpcPort }}
             - --smp
             - "1"
             - --memory
