@@ -1,0 +1,104 @@
+{{- if .Values.airflow.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.airflow.name }}-pvc
+  namespace: {{ .Values.namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.airflow.storage.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.airflow.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.airflow.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.airflow.name }}
+    spec:
+      containers:
+        - name: airflow
+          image: {{ .Values.airflow.image.repository }}:{{ .Values.airflow.image.tag }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AIRFLOW_HOME
+              value: /opt/airflow
+            - name: AIRFLOW__CORE__LOAD_EXAMPLES
+              value: "False"
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: SequentialExecutor
+            - name: _AIRFLOW_WWW_USER_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.airflow.existingSecret | quote }}
+                  key: {{ .Values.airflow.secretKeys.username | quote }}
+            - name: _AIRFLOW_WWW_USER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.airflow.existingSecret | quote }}
+                  key: {{ .Values.airflow.secretKeys.password | quote }}
+            - name: _AIRFLOW_WWW_USER_FIRSTNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.airflow.existingSecret | quote }}
+                  key: {{ .Values.airflow.secretKeys.firstname | quote }}
+            - name: _AIRFLOW_WWW_USER_LASTNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.airflow.existingSecret | quote }}
+                  key: {{ .Values.airflow.secretKeys.lastname | quote }}
+            - name: _AIRFLOW_WWW_USER_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.airflow.existingSecret | quote }}
+                  key: {{ .Values.airflow.secretKeys.email | quote }}
+          command:
+            - bash
+            - -lc
+          args:
+            - |
+              airflow db migrate
+              airflow users create \
+                --username "${_AIRFLOW_WWW_USER_USERNAME}" \
+                --password "${_AIRFLOW_WWW_USER_PASSWORD}" \
+                --firstname "${_AIRFLOW_WWW_USER_FIRSTNAME}" \
+                --lastname "${_AIRFLOW_WWW_USER_LASTNAME}" \
+                --role Admin \
+                --email "${_AIRFLOW_WWW_USER_EMAIL}" || true
+              exec airflow standalone
+          ports:
+            - name: http
+              containerPort: {{ .Values.airflow.service.port }}
+          resources:
+            {{- toYaml .Values.airflow.resources | nindent 12 }}
+          volumeMounts:
+            - name: airflow-home
+              mountPath: /opt/airflow
+      volumes:
+        - name: airflow-home
+          persistentVolumeClaim:
+            claimName: {{ .Values.airflow.name }}-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.airflow.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: {{ .Values.airflow.name }}
+  ports:
+    - name: http
+      port: {{ .Values.airflow.service.port }}
+      targetPort: http
+{{- end }}

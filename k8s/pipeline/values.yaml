@@ -2,7 +2,7 @@ namespace: proj10-platform
 
 # Phase 1 scaffold values. Runtime services are added in later phases.
 pipeline:
-  phase: "phase-3-consumer-model-server"
+  phase: "phase-4-airflow"
 
 redpanda:
   enabled: true
@@ -97,3 +97,28 @@ modelServer:
     limits:
       cpu: "250m"
       memory: "256Mi"
+
+airflow:
+  enabled: true
+  name: airflow
+  image:
+    repository: apache/airflow
+    tag: "2.9.3-python3.11"
+  service:
+    port: 8080
+  storage:
+    size: 20Gi
+  existingSecret: airflow-secrets
+  secretKeys:
+    username: AIRFLOW_ADMIN_USERNAME
+    password: AIRFLOW_ADMIN_PASSWORD
+    firstname: AIRFLOW_ADMIN_FIRSTNAME
+    lastname: AIRFLOW_ADMIN_LASTNAME
+    email: AIRFLOW_ADMIN_EMAIL
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "3Gi"
