@@ -49,9 +49,9 @@ service:
   externalIP: ""
 
 app:
-  publicUrl: "http://localhost:8080"
-  frontendUrl: "http://localhost:8080"
-  csrfTrustedOrigins: "http://localhost:8080"
+  publicUrl: "http://129.114.27.20:8080"
+  frontendUrl: "http://129.114.27.20:8080"
+  csrfTrustedOrigins: "http://129.114.27.20:8080"
   frontendBodySizeLimit: "Infinity"
   debug: "false"
 
