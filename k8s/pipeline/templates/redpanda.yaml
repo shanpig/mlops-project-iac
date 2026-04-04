@@ -79,7 +79,7 @@ spec:
         - name: redpanda
           image: {{ .Values.redpanda.image.repository }}:{{ .Values.redpanda.image.tag }}
           imagePullPolicy: IfNotPresent
-          command:
+          args:
             - redpanda
             - start
             - --kafka-addr
