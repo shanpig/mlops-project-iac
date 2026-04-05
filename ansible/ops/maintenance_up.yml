@@ -1,0 +1,83 @@
+---
+- name: Bring project workloads back after maintenance/demo reset
+  hosts: node1
+  become: yes
+  vars:
+    project_applications:
+      - proj10-staging
+      - proj10-canary
+      - proj10-production
+      - proj10-platform
+      - proj10-pipeline
+
+  tasks:
+    - name: Check which ArgoCD apps currently exist
+      command: kubectl -n argocd get application {{ item }}
+      loop: "{{ project_applications }}"
+      register: app_exists
+      failed_when: false
+      changed_when: false
+
+    - name: Re-enable autosync for existing apps
+      command:
+        argv:
+          - kubectl
+          - -n
+          - argocd
+          - patch
+          - application
+          - "{{ item.item }}"
+          - --type
+          - merge
+          - -p
+          - '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+      loop: "{{ app_exists.results }}"
+      when: item.rc == 0
+      changed_when: true
+
+    - name: Request hard refresh for existing apps
+      command: >
+        kubectl -n argocd annotate application {{ item.item }}
+        argocd.argoproj.io/refresh=hard --overwrite
+      loop: "{{ app_exists.results }}"
+      when: item.rc == 0
+      changed_when: true
+
+    - name: Request sync operation for existing apps
+      command:
+        argv:
+          - kubectl
+          - -n
+          - argocd
+          - patch
+          - application
+          - "{{ item.item }}"
+          - --type
+          - merge
+          - -p
+          - '{"operation":{"sync":{"prune":true}}}'
+      loop: "{{ app_exists.results }}"
+      when: item.rc == 0
+      changed_when: true
+
+    - name: Wait for apps to become Synced and Healthy
+      shell: |
+        kubectl -n argocd get application {{ item.item }} \
+          -o jsonpath='{.status.sync.status} {.status.health.status}'
+      args:
+        executable: /bin/bash
+      register: app_status
+      until: "'Synced Healthy' in app_status.stdout"
+      retries: 30
+      delay: 10
+      loop: "{{ app_exists.results }}"
+      when: item.rc == 0
+      changed_when: false
+      failed_when: false
+
+    - name: Show maintenance-up summary
+      debug:
+        msg:
+          - "Maintenance up completed."
+          - "Autosync re-enabled for existing proj10 applications."
+          - "ArgoCD sync operations were requested."

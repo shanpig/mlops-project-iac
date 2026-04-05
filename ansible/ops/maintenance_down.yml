@@ -1,0 +1,107 @@
+---
+- name: Gracefully scale down project workloads for maintenance/demo reset
+  hosts: node1
+  become: yes
+  vars:
+    project_applications:
+      - proj10-staging
+      - proj10-canary
+      - proj10-production
+      - proj10-platform
+      - proj10-pipeline
+    managed_namespaces:
+      - proj10-staging
+      - proj10-canary
+      - proj10-production
+      - proj10-platform
+    backup_root: /tmp/proj10-maintenance
+
+  tasks:
+    - name: Capture UTC timestamp
+      command: date -u +%Y%m%d-%H%M%S
+      register: maintenance_ts
+      changed_when: false
+
+    - name: Build backup directory path
+      set_fact:
+        backup_dir: "{{ backup_root }}/{{ maintenance_ts.stdout }}"
+
+    - name: Ensure backup directory exists
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Snapshot ArgoCD applications
+      command: kubectl -n argocd get applications.argoproj.io -o yaml
+      register: apps_snapshot
+      changed_when: false
+
+    - name: Save ArgoCD application snapshot
+      copy:
+        dest: "{{ backup_dir }}/argocd-applications.yaml"
+        content: "{{ apps_snapshot.stdout }}"
+        mode: "0644"
+
+    - name: Snapshot namespace resources before scale-down
+      shell: |
+        kubectl -n {{ item }} get deploy,statefulset,pvc,svc,pods -o wide
+      args:
+        executable: /bin/bash
+      loop: "{{ managed_namespaces }}"
+      register: ns_snapshots
+      failed_when: false
+      changed_when: false
+
+    - name: Save per-namespace snapshots
+      copy:
+        dest: "{{ backup_dir }}/{{ item.item }}-resources.txt"
+        content: "{{ item.stdout | default('namespace missing or no resources') }}"
+        mode: "0644"
+      loop: "{{ ns_snapshots.results }}"
+
+    - name: Check which ArgoCD apps currently exist
+      command: kubectl -n argocd get application {{ item }}
+      loop: "{{ project_applications }}"
+      register: app_exists
+      failed_when: false
+      changed_when: false
+
+    - name: Disable autosync for existing ArgoCD apps
+      command:
+        argv:
+          - kubectl
+          - -n
+          - argocd
+          - patch
+          - application
+          - "{{ item.item }}"
+          - --type
+          - merge
+          - -p
+          - '{"spec":{"syncPolicy":null}}'
+      loop: "{{ app_exists.results }}"
+      when: item.rc == 0
+      changed_when: true
+
+    - name: Scale deployments to zero in managed namespaces
+      command: kubectl -n {{ item }} scale deploy --all --replicas=0
+      loop: "{{ managed_namespaces }}"
+      register: scaled_deploy_result
+      failed_when: false
+      changed_when: "'scaled' in (scaled_deploy_result.stdout | default(''))"
+
+    - name: Scale statefulsets to zero in managed namespaces
+      command: kubectl -n {{ item }} scale statefulset --all --replicas=0
+      loop: "{{ managed_namespaces }}"
+      register: scaled_sts_result
+      failed_when: false
+      changed_when: "'scaled' in (scaled_sts_result.stdout | default(''))"
+
+    - name: Show maintenance-down summary
+      debug:
+        msg:
+          - "Maintenance down completed."
+          - "Backup artifacts at {{ backup_dir }}"
+          - "Autosync disabled for existing proj10 applications."
+          - "Deployments/statefulsets in managed namespaces were scaled to 0."

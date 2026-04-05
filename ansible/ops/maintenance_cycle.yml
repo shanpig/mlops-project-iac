@@ -1,0 +1,12 @@
+---
+- import_playbook: maintenance_down.yml
+
+- name: Pause between down and up phases
+  hosts: node1
+  become: yes
+  tasks:
+    - name: Wait a few seconds before bring-up
+      pause:
+        seconds: 10
+
+- import_playbook: maintenance_up.yml
