@@ -48,6 +48,8 @@ spec:
                   key: dbname
           ports:
             - containerPort: 5432
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql

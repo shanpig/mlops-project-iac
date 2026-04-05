@@ -65,6 +65,8 @@ spec:
         - --providers.kubernetesgateway=true
         - --entrypoints.web.address=:8000
         - --log.level=DEBUG
+        resources:
+          {{- toYaml .Values.gateway.resources | nindent 10 }}
         ports:
         - containerPort: 8000
 ---

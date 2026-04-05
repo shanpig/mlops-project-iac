@@ -1,9 +1,31 @@
 minio:
   externalIP: "0.0.0.0"
+  resources:
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
 
 mlflow:
   externalIP: "0.0.0.0"
 
 gateway:
   externalIP: "0.0.0.0"
+  resources:
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
 
+postgres:
+  resources:
+    limits:
+      cpu: "250m"
+      memory: "512Mi"
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
