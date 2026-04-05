@@ -17,11 +17,10 @@ ENV_FILE="$BASE_DIR/.env"
 # ANSIBLE_INVENTORY_TEMPLATE_FILENAME="$ANSIBLE_INVENTORY_FILENAME.template"
 # ANSIBLE_INVENTORY_TEMPLATE_FILEPATH="$ANSIBLE_DIR/$ANSIBLE_INVENTORY_TEMPLATE_FILENAME"
 
-CLOUDS_DIR="$BASE_DIR/tf/kvm"
+KVM_CLOUDS_DIR="$BASE_DIR/tf/kvm"
+CHI_CLOUDS_DIR="$BASE_DIR/tf/chi"
 CLOUDS_YAML_FILENAME="clouds.yaml"
-CLOUDS_YAML_FILEPATH="$CLOUDS_DIR/$CLOUDS_YAML_FILENAME"
 CLOUDS_YAML_TEMPLATE_FILENAME="$CLOUDS_YAML_FILENAME.template"
-CLOUDS_YAML_TEMPLATE_FILEPATH="$CLOUDS_DIR/$CLOUDS_YAML_TEMPLATE_FILENAME"
 
 SSH_CONFIG_TEMPLATE="$BASE_DIR/ssh-config.template"
 SSH_CONFIG_PATH="$HOME/.ssh/config"
@@ -39,10 +38,12 @@ function get_env {
 }
 
 FLOATING_IP=$(get_env FLOATING_IP)
-APPLICATION_CREDENTIAL_ID=$(get_env APPLICATION_CREDENTIAL_ID)
-APPLICATION_CREDENTIAL_SECRET=$(get_env APPLICATION_CREDENTIAL_SECRET)
+KVM_APPLICATION_CREDENTIAL_ID=$(get_env KVM_APPLICATION_CREDENTIAL_ID)
+KVM_APPLICATION_CREDENTIAL_SECRET=$(get_env KVM_APPLICATION_CREDENTIAL_SECRET)
+CHI_APPLICATION_CREDENTIAL_ID=$(get_env CHI_APPLICATION_CREDENTIAL_ID)
+CHI_APPLICATION_CREDENTIAL_SECRET=$(get_env CHI_APPLICATION_CREDENTIAL_SECRET)
 
-if [ -z "$FLOATING_IP" ] || [ -z "$APPLICATION_CREDENTIAL_ID" ] || [ -z "$APPLICATION_CREDENTIAL_SECRET" ]; then
+if [ -z "$FLOATING_IP" ] || [ -z "$KVM_APPLICATION_CREDENTIAL_ID" ] || [ -z "$KVM_APPLICATION_CREDENTIAL_SECRET" ] || [ -z "$CHI_APPLICATION_CREDENTIAL_ID" ] || [ -z "$CHI_APPLICATION_CREDENTIAL_SECRET" ]; then
     echo "One or more required env variables missing."
     exit 1
 fi
@@ -75,24 +76,44 @@ fi
 # echo "Replaced YOUR_FLOATING_IP in $ANSIBLE_INVENTORY_TEMPLATE_FILENAME."
 # echo "Saved as $ANSIBLE_INVENTORY_FILENAME."
 
-# Update clouds.yaml, replace APPLICATION_CREDENTIAL_ID and APPLICATION_CREDENTIAL_SECRET
+# Update tf/kvm/clouds.yaml and tf/chi/clouds.yaml from each folder template
+function render_clouds_yaml {
+    local env_name="$1"
+    local clouds_dir="$2"
+    local template_path="$clouds_dir/$CLOUDS_YAML_TEMPLATE_FILENAME"
+    local output_path="$clouds_dir/$CLOUDS_YAML_FILENAME"
+    local tmp_path="${output_path}.tmp"
+    local id_placeholder="$3"
+    local id_value="$4"
+    local secret_placeholder="$5"
+    local secret_value="$6"
 
-echo "Stubbing env variables in $CLOUDS_YAML_TEMPLATE_FILEPATH..."
-if [ ! -f "$CLOUDS_YAML_TEMPLATE_FILEPATH" ]; then
-    echo "$CLOUDS_YAML_TEMPLATE_FILENAME not found at $CLOUDS_YAML_TEMPLATE_FILEPATH"
-    exit 1
-fi
+    echo "Stubbing env variables in $template_path..."
+    if [ ! -f "$template_path" ]; then
+        echo "$CLOUDS_YAML_TEMPLATE_FILENAME not found for $env_name at $template_path"
+        exit 1
+    fi
 
-TMP_CLOUDS_YAML="${CLOUDS_YAML_FILEPATH}.tmp"
-sed \
-    -e "s/APPLICATION_CREDENTIAL_ID/$APPLICATION_CREDENTIAL_ID/g" \
-    -e "s/APPLICATION_CREDENTIAL_SECRET/$APPLICATION_CREDENTIAL_SECRET/g" \
-    "$CLOUDS_YAML_TEMPLATE_FILEPATH" > "$TMP_CLOUDS_YAML"
-mv "$TMP_CLOUDS_YAML" "$CLOUDS_YAML_FILEPATH"
+    sed \
+        -e "s/$id_placeholder/$id_value/g" \
+        -e "s/$secret_placeholder/$secret_value/g" \
+        "$template_path" > "$tmp_path"
+    mv "$tmp_path" "$output_path"
 
-echo "Replaced APPLICATION_CREDENTIAL_ID in $CLOUDS_YAML_TEMPLATE_FILEPATH."
-echo "Replaced APPLICATION_CREDENTIAL_SECRET in $CLOUDS_YAML_TEMPLATE_FILEPATH."
-echo "Saved as $CLOUDS_YAML_FILEPATH."
+    echo "Rendered $output_path for $env_name."
+}
+
+render_clouds_yaml \
+    "KVM@TACC" \
+    "$KVM_CLOUDS_DIR" \
+    "KVM_APPLICATION_CREDENTIAL_ID" "$KVM_APPLICATION_CREDENTIAL_ID" \
+    "KVM_APPLICATION_CREDENTIAL_SECRET" "$KVM_APPLICATION_CREDENTIAL_SECRET"
+
+render_clouds_yaml \
+    "CHI@TACC" \
+    "$CHI_CLOUDS_DIR" \
+    "CHI_APPLICATION_CREDENTIAL_ID" "$CHI_APPLICATION_CREDENTIAL_ID" \
+    "CHI_APPLICATION_CREDENTIAL_SECRET" "$CHI_APPLICATION_CREDENTIAL_SECRET"
 
 # New section: Update ~/.ssh/config from ssh-config.template, replace FLOATING_IP
 echo "Handling SSH config..."
