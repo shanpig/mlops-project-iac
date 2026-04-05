@@ -16,9 +16,6 @@
     repo_path: "https://github.com/shanpig/mlops-project-iac.git"
     app_name: "proj10-platform"
     app_path: "k8s/platform"
-    minio_access_key: "your-access-key"
-    postgres_username: "user"
-    postgres_db: "mlflowdb"
 
   tasks:
     - name: Get ArgoCD admin password from Kubernetes secret
@@ -58,46 +55,11 @@
       when: ns_check.rc != 0
       command: kubectl create namespace proj10-platform
 
-    - name: Check if MinIO secret already exists
-      command: kubectl get secret minio-credentials -n proj10-platform
-      register: minio_secret_check
-      failed_when: false
-      changed_when: false
-
-    - name: Generate MinIO secret key
-      when: minio_secret_check.rc != 0
-      set_fact:
-        minio_secret_key: "{{ lookup('password', '/dev/null length=20 chars=ascii_letters,digits') }}"
-
-    - name: Create MinIO credentials secret
-      when: minio_secret_check.rc != 0
-      command: >
-        kubectl create secret generic minio-credentials
-        --namespace proj10-platform
-        --from-literal=accesskey={{ minio_access_key }}
-        --from-literal=secretkey={{ minio_secret_key }}
-      register: minio_secret_create
-
-    - name: Check if Postgres secret already exists
-      command: kubectl get secret postgres-credentials -n proj10-platform
-      register: postgres_secret_check
-      failed_when: false
-      changed_when: false
-
-    - name: Generate Postgres password
-      when: postgres_secret_check.rc != 0
-      set_fact:
-        postgres_password: "{{ lookup('password', '/dev/null length=20 chars=ascii_letters,digits') }}"
-
-    - name: Create Postgres credentials secret
-      when: postgres_secret_check.rc != 0
-      command: >
-        kubectl create secret generic postgres-credentials
-        --namespace proj10-platform
-        --from-literal=username={{ postgres_username }}
-        --from-literal=password={{ postgres_password }}
-        --from-literal=dbname={{ postgres_db }}
-      register: postgres_secret_create
+    - name: Apply platform SealedSecrets from Git
+      loop:
+        - https://raw.githubusercontent.com/shanpig/mlops-project-iac/main/k8s/secrets/proj10-platform-minio-credentials-sealedsecret.yaml
+        - https://raw.githubusercontent.com/shanpig/mlops-project-iac/main/k8s/secrets/proj10-platform-postgres-credentials-sealedsecret.yaml
+      command: kubectl apply -f {{ item }}
 
     - name: Check if ArgoCD application exists
       command: >

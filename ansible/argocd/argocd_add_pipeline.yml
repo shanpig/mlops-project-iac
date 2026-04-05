@@ -33,6 +33,13 @@
       failed_when: ns_create.rc != 0 and "AlreadyExists" not in ns_create.stderr
       changed_when: "'created' in ns_create.stdout"
 
+    - name: Apply pipeline SealedSecrets from Git
+      loop:
+        - https://raw.githubusercontent.com/shanpig/mlops-project-iac/main/k8s/secrets/proj10-platform-airflow-secrets-sealedsecret.yaml
+        - https://raw.githubusercontent.com/shanpig/mlops-project-iac/main/k8s/secrets/proj10-platform-nimtable-config-sealedsecret.yaml
+        - https://raw.githubusercontent.com/shanpig/mlops-project-iac/main/k8s/secrets/proj10-platform-nimtable-secrets-sealedsecret.yaml
+      command: kubectl apply -f {{ item }}
+
     - name: Detect external IP starting with 10.56
       set_fact:
         external_ip: "{{ ansible_all_ipv4_addresses | select('match', '^10\\.56\\..*') | list | first }}"

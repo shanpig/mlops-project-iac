@@ -37,6 +37,11 @@
       failed_when: ns_create.rc != 0 and "AlreadyExists" not in ns_create.stderr
       changed_when: "'created' in ns_create.stdout"
 
+    - name: Apply staging SealedSecret from Git
+      command: >
+        kubectl apply -f
+        https://raw.githubusercontent.com/shanpig/mlops-project-iac/main/k8s/secrets/proj10-staging-proj10-adventurelog-secrets-sealedsecret.yaml
+
     - name: Check if ArgoCD app exists
       command: argocd app get {{ app_name }} --port-forward --port-forward-namespace={{ argocd_namespace }}
       register: app_check
