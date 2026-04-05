@@ -33,6 +33,10 @@
       failed_when: ns_create.rc != 0 and "AlreadyExists" not in ns_create.stderr
       changed_when: "'created' in ns_create.stdout"
 
+    - name: Detect external IP starting with 10.56
+      set_fact:
+        external_ip: "{{ ansible_all_ipv4_addresses | select('match', '^10\\.56\\..*') | list | first }}"
+
     - name: Check if ArgoCD app exists
       command: argocd app get {{ app_name }} --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}
       register: app_check
@@ -47,6 +51,10 @@
         --path {{ app_path }} \
         --dest-server https://kubernetes.default.svc \
         --dest-namespace {{ target_namespace }} \
+        --helm-set-string adminer.externalIP={{ external_ip }} \
+        --helm-set-string redisInsight.externalIP={{ external_ip }} \
+        --helm-set-string nimtable.externalIP={{ external_ip }} \
+        --helm-set-string nimtableWeb.externalIP={{ external_ip }} \
         --sync-policy automated --self-heal \
         --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}
 
@@ -58,6 +66,10 @@
         --path {{ app_path }} \
         --dest-server https://kubernetes.default.svc \
         --dest-namespace {{ target_namespace }} \
+        --helm-set-string adminer.externalIP={{ external_ip }} \
+        --helm-set-string redisInsight.externalIP={{ external_ip }} \
+        --helm-set-string nimtable.externalIP={{ external_ip }} \
+        --helm-set-string nimtableWeb.externalIP={{ external_ip }} \
         --sync-policy automated --self-heal \
         --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}
 
