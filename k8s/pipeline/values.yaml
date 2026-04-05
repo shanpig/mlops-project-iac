@@ -2,7 +2,7 @@ namespace: proj10-platform
 
 # Phase 1 scaffold values. Runtime services are added in later phases.
 pipeline:
-  phase: "phase-4-airflow"
+  phase: "phase-5-admin-ux-tools"
 
 redpanda:
   enabled: true
@@ -122,3 +122,90 @@ airflow:
     limits:
       cpu: "2"
       memory: "3Gi"
+
+adminer:
+  enabled: true
+  name: adminer
+  image:
+    repository: adminer
+    tag: "latest"
+  service:
+    port: 5050
+  externalIP: "0.0.0.0"
+  defaultServer: postgres
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "300m"
+      memory: "256Mi"
+
+redisInsight:
+  enabled: true
+  name: redisinsight
+  image:
+    repository: redis/redisinsight
+    tag: "latest"
+  service:
+    port: 15540
+  externalIP: "0.0.0.0"
+  storage:
+    size: 5Gi
+  env:
+    redisHost: redis
+    redisPort: "6379"
+    redisAlias: proj10-redis
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+nimtable:
+  enabled: true
+  name: nimtable
+  image:
+    repository: ghcr.io/nimtable/nimtable
+    tag: "nightly"
+  service:
+    port: 18182
+    targetPort: 8182
+  externalIP: "0.0.0.0"
+  javaOpts: "-Xmx2g -Xms256m"
+  config:
+    existingSecret: nimtable-config
+    key: config.yaml
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+
+nimtableWeb:
+  enabled: true
+  name: nimtable-web
+  image:
+    repository: ghcr.io/nimtable/nimtable-web
+    tag: "nightly"
+  service:
+    port: 13000
+    targetPort: 3000
+  externalIP: "0.0.0.0"
+  existingSecret: nimtable-secrets
+  secretKeys:
+    databaseUrl: NIMTABLE_DATABASE_URL
+    jwtSecret: NIMTABLE_JWT_SECRET
+    adminUsername: NIMTABLE_ADMIN_USERNAME
+    adminPassword: NIMTABLE_ADMIN_PASSWORD
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"

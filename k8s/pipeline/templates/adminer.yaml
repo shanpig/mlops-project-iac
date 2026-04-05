@@ -1,0 +1,46 @@
+{{- if .Values.adminer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.adminer.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.adminer.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.adminer.name }}
+    spec:
+      containers:
+        - name: adminer
+          image: {{ .Values.adminer.image.repository }}:{{ .Values.adminer.image.tag }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ADMINER_DEFAULT_SERVER
+              value: {{ .Values.adminer.defaultServer | quote }}
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            {{- toYaml .Values.adminer.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.adminer.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: {{ .Values.adminer.name }}
+  ports:
+    - name: http
+      port: {{ .Values.adminer.service.port }}
+      targetPort: http
+  {{- if .Values.adminer.externalIP }}
+  externalIPs:
+    - {{ .Values.adminer.externalIP }}
+  {{- end }}
+{{- end }}
