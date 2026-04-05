@@ -23,11 +23,12 @@ spec:
       storage: {{ .Values.postgres.storage.size }}
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: proj10-postgres
   namespace: proj10-production
 spec:
+  serviceName: proj10-postgres
   replicas: 1
   selector:
     matchLabels:

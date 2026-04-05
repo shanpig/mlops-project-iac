@@ -12,11 +12,12 @@ spec:
       storage: 5Gi
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: postgres
   namespace: proj10-platform
 spec:
+  serviceName: postgres
   replicas: 1
   selector:
     matchLabels:
