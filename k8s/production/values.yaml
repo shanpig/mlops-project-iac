@@ -56,9 +56,9 @@ service:
   externalIP: ""
 
 app:
-  publicUrl: "http://129.114.27.20:8080"
-  frontendUrl: "http://129.114.27.20:8080"
-  csrfTrustedOrigins: "http://129.114.27.20:8080"
+  publicUrl: "http://129.114.26.235:8080"
+  frontendUrl: "http://129.114.26.235:8080"
+  csrfTrustedOrigins: "http://129.114.26.235:8080"
   frontendBodySizeLimit: "Infinity"
   debug: "false"
 
