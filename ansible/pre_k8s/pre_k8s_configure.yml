@@ -10,10 +10,20 @@
         state: stopped
         enabled: no
 
+    - name: Remove conflicting firewalld unit file if present
+      file:
+        path: /etc/systemd/system/firewalld.service
+        state: absent
+
+    - name: Reload systemd after firewalld unit cleanup
+      systemd:
+        daemon_reload: yes
+
     - name: Mask firewalld service
       systemd:
         name: firewalld
         masked: yes
+        force: yes
 
 - name: Set up insecure registry for Docker
   hosts: node1,node2,node3
@@ -47,4 +57,3 @@
         owner: root
         group: root
         mode: '0644'
-
