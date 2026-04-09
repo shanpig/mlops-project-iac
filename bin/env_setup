@@ -21,6 +21,8 @@ KVM_CLOUDS_DIR="$BASE_DIR/tf/kvm"
 CHI_CLOUDS_DIR="$BASE_DIR/tf/chi"
 CLOUDS_YAML_FILENAME="clouds.yaml"
 CLOUDS_YAML_TEMPLATE_FILENAME="$CLOUDS_YAML_FILENAME.template"
+SECRETS_TEMPLATE_DIR="$BASE_DIR/k8s/secrets/templates"
+SECRETS_OUTPUT_DIR="$BASE_DIR/k8s/secrets/plain"
 
 SSH_CONFIG_TEMPLATE="$BASE_DIR/ssh-config.template"
 SSH_CONFIG_PATH="$HOME/.ssh/config"
@@ -34,7 +36,18 @@ fi
 # Utility for parsing .env values
 function get_env {
     local key="$1"
-    grep "^${key}[[:space:]]*=" "$ENV_FILE" | sed -E "s/^${key}[[:space:]]*=[[:space:]]*\"?([^\"]*)\"?.*$/\1/"
+    local line
+    local value
+
+    line="$(grep -E "^${key}[[:space:]]*=" "$ENV_FILE" | tail -n 1 || true)"
+    value="${line#*=}"
+    value="$(echo "$value" | sed -E "s/^[[:space:]]+|[[:space:]]+$//g")"
+
+    if [[ "$value" =~ ^\".*\"$ ]] || [[ "$value" =~ ^\'.*\'$ ]]; then
+        value="${value:1:${#value}-2}"
+    fi
+
+    echo "$value"
 }
 
 FLOATING_IP=$(get_env FLOATING_IP)
@@ -47,6 +60,76 @@ if [ -z "$FLOATING_IP" ] || [ -z "$KVM_APPLICATION_CREDENTIAL_ID" ] || [ -z "$KV
     echo "One or more required env variables missing."
     exit 1
 fi
+
+function escape_sed_replacement {
+    echo "$1" | sed -e 's/[\/&]/\\&/g'
+}
+
+function render_secrets_from_templates {
+    if [ ! -d "$SECRETS_TEMPLATE_DIR" ]; then
+        echo "Secrets template directory not found at $SECRETS_TEMPLATE_DIR"
+        exit 1
+    fi
+
+    mkdir -p "$SECRETS_OUTPUT_DIR"
+
+    # Secrets used by templates.
+    local keys=(
+        MINIO_ACCESS_KEY
+        MINIO_SECRET_KEY
+        PLATFORM_POSTGRES_USERNAME
+        PLATFORM_POSTGRES_PASSWORD
+        PLATFORM_POSTGRES_DBNAME
+        AIRFLOW_ADMIN_USERNAME
+        AIRFLOW_ADMIN_PASSWORD
+        AIRFLOW_ADMIN_FIRSTNAME
+        AIRFLOW_ADMIN_LASTNAME
+        AIRFLOW_ADMIN_EMAIL
+        NIMTABLE_CONFIG_DB_URL
+        NIMTABLE_CONFIG_DB_USERNAME
+        NIMTABLE_CONFIG_DB_PASSWORD
+        NIMTABLE_DATABASE_URL
+        NIMTABLE_JWT_SECRET
+        NIMTABLE_ADMIN_USERNAME
+        NIMTABLE_ADMIN_PASSWORD
+        STAGING_POSTGRES_PASSWORD
+        STAGING_SECRET_KEY
+        STAGING_DJANGO_ADMIN_USERNAME
+        STAGING_DJANGO_ADMIN_PASSWORD
+        STAGING_DJANGO_ADMIN_EMAIL
+        CANARY_POSTGRES_PASSWORD
+        CANARY_SECRET_KEY
+        CANARY_DJANGO_ADMIN_USERNAME
+        CANARY_DJANGO_ADMIN_PASSWORD
+        CANARY_DJANGO_ADMIN_EMAIL
+        PRODUCTION_POSTGRES_PASSWORD
+        PRODUCTION_SECRET_KEY
+        PRODUCTION_DJANGO_ADMIN_USERNAME
+        PRODUCTION_DJANGO_ADMIN_PASSWORD
+        PRODUCTION_DJANGO_ADMIN_EMAIL
+    )
+
+    for template in "$SECRETS_TEMPLATE_DIR"/*.yaml.template; do
+        [ -e "$template" ] || continue
+
+        local output
+        output="$SECRETS_OUTPUT_DIR/$(basename "${template%.template}")"
+        cp "$template" "$output"
+
+        for key in "${keys[@]}"; do
+            local value
+            local escaped
+            value="$(get_env "$key")"
+            escaped="$(escape_sed_replacement "$value")"
+            sed -i.bak "s|__${key}__|${escaped}|g" "$output"
+        done
+
+        rm -f "${output}.bak"
+        echo "Rendered $(basename "$output")"
+    done
+
+    echo "Rendered Kubernetes Secret manifests to $SECRETS_OUTPUT_DIR"
+}
 
 # # Update ansible.cfg, replace "A.B.C.D" with the value of FLOATING_IP
 # echo "Stubbing env variables in $ANSIBLE_CFG_TEMPLATE_FILEPATH..."
@@ -114,6 +197,8 @@ render_clouds_yaml \
     "$CHI_CLOUDS_DIR" \
     "CHI_APPLICATION_CREDENTIAL_ID" "$CHI_APPLICATION_CREDENTIAL_ID" \
     "CHI_APPLICATION_CREDENTIAL_SECRET" "$CHI_APPLICATION_CREDENTIAL_SECRET"
+
+render_secrets_from_templates
 
 # New section: Update ~/.ssh/config from ssh-config.template, replace FLOATING_IP
 echo "Handling SSH config..."
