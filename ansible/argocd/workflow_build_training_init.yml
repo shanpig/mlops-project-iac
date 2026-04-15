@@ -7,7 +7,29 @@
     workflow_file: workflows/build-training-initial-buildkit.yaml
     workflow_name: build-training-initial-buildkit
     argo_namespace: argo
-    branch: mlops  # Default branch (can be overridden with -e branch=mlops-bad-arch)
+    branch: main  # Default branch (can be overridden with -e branch=<feature-branch>)
+    training_repo_owner: rohitshididnyu
+    training_repo_name: GemSpot_training
+    batch_repo_owner: lefteriskomvopoulos
+    batch_repo_name: gemspot
+    github_auth_username: "{{ github_username | default('', true) }}"
+    github_auth_token: "{{ github_token | default('', true) }}"
+    training_repo_url: >-
+      {{
+        (github_auth_username | length > 0 and github_auth_token | length > 0)
+        | ternary(
+            'https://' ~ github_auth_username ~ ':' ~ github_auth_token ~ '@github.com/' ~ training_repo_owner ~ '/' ~ training_repo_name ~ '.git',
+            'https://github.com/' ~ training_repo_owner ~ '/' ~ training_repo_name ~ '.git'
+          )
+      }}
+    batch_repo_url: >-
+      {{
+        (github_auth_username | length > 0 and github_auth_token | length > 0)
+        | ternary(
+            'https://' ~ github_auth_username ~ ':' ~ github_auth_token ~ '@github.com/' ~ batch_repo_owner ~ '/' ~ batch_repo_name ~ '.git',
+            'https://github.com/' ~ batch_repo_owner ~ '/' ~ batch_repo_name ~ '.git'
+          )
+      }}
 
   tasks:
     - name: Clone or update proj10-iac repo
@@ -19,7 +41,10 @@
     - name: Submit Argo Workflow with branch parameter
       shell: |
         kubectl -n {{ argo_namespace }} create -f - <<EOF
-        $(cat {{ repo_dest }}/{{ workflow_file }} | sed 's/value: mlops/value: {{ branch }}/')
+        $(cat {{ repo_dest }}/{{ workflow_file }} \
+          | sed 's#value: main#value: {{ branch }}#' \
+          | sed 's#value: https://github.com/rohitshididnyu/GemSpot_training.git#value: {{ training_repo_url }}#' \
+          | sed 's#value: https://github.com/lefteriskomvopoulos/gemspot.git#value: {{ batch_repo_url }}#')
         EOF
       register: workflow_submit
 

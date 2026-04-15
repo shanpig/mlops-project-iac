@@ -7,7 +7,11 @@ spec:
   arguments:
     parameters:
     - name: branch
-      value: mlops
+      value: main
+    - name: training-repo-url
+      value: https://github.com/rohitshididnyu/GemSpot_training.git
+    - name: batch-repo-url
+      value: https://github.com/lefteriskomvopoulos/gemspot.git
 
   # Compatibility: some clusters ignore seccompProfile/appArmorProfile fields
   podMetadata:
@@ -38,9 +42,20 @@ spec:
             parameters:
             - name: branch
               value: "{{workflow.parameters.branch}}"
+            - name: training-repo-url
+              value: "{{workflow.parameters.training-repo-url}}"
+            - name: batch-repo-url
+              value: "{{workflow.parameters.batch-repo-url}}"
       # Step 2: Conditionally rebuild training image if code changed
       - - name: rebuild-training-image
           template: buildkit-rootless
+          arguments:
+            parameters:
+            - name: git-commit
+              value: "{{steps.check-code-changes.outputs.parameters.git-commit}}"
+          when: "'{{steps.check-code-changes.outputs.parameters.needs-rebuild}}' == 'true'"
+      - - name: tag-training-image-immutable
+          template: copy-latest-to-sha
           arguments:
             parameters:
             - name: git-commit
@@ -58,20 +73,13 @@ spec:
               value: "{{steps.run-training.outputs.parameters.modelversion}}"
           when: "'{{steps.run-training.outputs.parameters.modelversion}}' != ''"
 
-      # Step 5: Trigger app container build if model was registered
-      - - name: build-container
-          template: trigger-build
-          arguments:
-            parameters:
-            - name: model-version
-              value: "{{steps.run-training.outputs.parameters.modelversion}}"
-          when: "'{{steps.run-training.outputs.parameters.modelversion}}' != ''"
-
   # Template: Clone repo and check if rebuild is needed by comparing git commit to image label
   - name: check-and-clone
     inputs:
       parameters:
       - name: branch
+      - name: training-repo-url
+      - name: batch-repo-url
     outputs:
       parameters:
       - name: needs-rebuild
@@ -90,43 +98,95 @@ spec:
       image: alpine:3.19
       workingDir: /mnt/workspace
       command: [sh, -c]
+      env:
+      - name: GITHUB_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: github-repo-auth
+            key: username
+            optional: true
+      - name: GITHUB_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: github-repo-auth
+            key: token
+            optional: true
       args:
         - |
           set -eu
           
           # Install git and curl
           apk add --no-cache git curl jq > /dev/null 2>&1
+
+          # Argo PVC mount may contain leftover files; ensure clean clone target.
+          find /mnt/workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
+          TRAINING_URL="{{inputs.parameters.training-repo-url}}"
+          BATCH_URL="{{inputs.parameters.batch-repo-url}}"
+          if [ -n "${GITHUB_USERNAME:-}" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
+            TRAINING_URL=$(echo "$TRAINING_URL" | sed "s#https://github.com/#https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/#")
+            BATCH_URL=$(echo "$BATCH_URL" | sed "s#https://github.com/#https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/#")
+          fi
           
           # Clone the repository
           git clone --depth 1 --filter=blob:none --no-tags --single-branch \
             --branch "{{inputs.parameters.branch}}" \
-            https://github.com/teaching-on-testbeds/proj10-train.git .
+            "$TRAINING_URL" .
+
+          # Clone batch/data repo content required by combined retraining image.
+          rm -rf /tmp/gemspot-batch
+          git clone --depth 1 --filter=blob:none --no-tags --single-branch \
+            "$BATCH_URL" /tmp/gemspot-batch
+          mkdir -p /mnt/workspace/gemspot
+          cp -R /tmp/gemspot-batch/batch_pipeline /mnt/workspace/gemspot/
+
+          # Build recipe for Option B (combined image: training + batch + deps).
+          cat > /mnt/workspace/Dockerfile.combined <<'EOF'
+          FROM python:3.11-slim
+          ENV PYTHONDONTWRITEBYTECODE=1
+          ENV PYTHONUNBUFFERED=1
+          ENV PYTHONPATH=/app/src
+          WORKDIR /app
+
+          COPY requirements.txt /app/requirements.txt
+          RUN pip install --no-cache-dir --upgrade pip && \
+              pip install --no-cache-dir -r /app/requirements.txt && \
+              pip install --no-cache-dir boto3 pyiceberg psycopg2-binary pyarrow
+
+          COPY . /app
+          COPY gemspot/batch_pipeline /gemspot/batch_pipeline
+
+          CMD ["python", "scripts/retrain_pipeline.py"]
+          EOF
           
-          # Get current git commit
-          GIT_COMMIT=$(git rev-parse HEAD)
+          # Get current git commit (short SHA used as immutable image tag)
+          GIT_COMMIT=$(git rev-parse --short=12 HEAD)
           echo "Current git commit: $GIT_COMMIT"
           
           # Try to get the commit label from the existing image in registry
           REGISTRY="registry.kube-system.svc.cluster.local:5000"
           IMAGE_COMMIT=""
+          IMAGE_FLAVOR=""
           
           # Query registry for image manifest and config to get labels
           # First get the manifest to find the config digest
-          MANIFEST=$(curl -sf "http://${REGISTRY}/v2/proj10-train/manifests/latest" \
+          MANIFEST=$(curl -sf "http://${REGISTRY}/v2/proj10-training/manifests/latest" \
             -H "Accept: application/vnd.docker.distribution.manifest.v2+json" 2>/dev/null || echo "")
           
           if [ -n "$MANIFEST" ]; then
             CONFIG_DIGEST=$(echo "$MANIFEST" | jq -r '.config.digest // empty' 2>/dev/null || echo "")
             if [ -n "$CONFIG_DIGEST" ]; then
               # Get the config blob which contains labels
-              CONFIG=$(curl -sf "http://${REGISTRY}/v2/proj10-train/blobs/${CONFIG_DIGEST}" 2>/dev/null || echo "")
+              CONFIG=$(curl -sf "http://${REGISTRY}/v2/proj10-training/blobs/${CONFIG_DIGEST}" 2>/dev/null || echo "")
               if [ -n "$CONFIG" ]; then
                 IMAGE_COMMIT=$(echo "$CONFIG" | jq -r '.config.Labels["git.commit"] // empty' 2>/dev/null || echo "")
+                IMAGE_FLAVOR=$(echo "$CONFIG" | jq -r '.config.Labels["build.flavor"] // empty' 2>/dev/null || echo "")
               fi
             fi
           fi
           
           echo "Image git commit label: ${IMAGE_COMMIT:-<not found>}"
+          echo "Image build flavor label: ${IMAGE_FLAVOR:-<not found>}"
           
           # Prepare output directory
           mkdir -p /var/run/argo/outputs/parameters
@@ -135,8 +195,11 @@ spec:
           # Determine if rebuild is needed
           # Always rebuild for non-default branches
           BRANCH="{{inputs.parameters.branch}}"
-          if [ "$BRANCH" != "mlops" ]; then
+          if [ "$BRANCH" != "main" ]; then
             echo "Rebuild needed: non-default branch '$BRANCH' specified"
+            echo "true" > /var/run/argo/outputs/parameters/needs-rebuild
+          elif [ "${IMAGE_FLAVOR}" != "combined-v1" ]; then
+            echo "Rebuild needed: image is missing required combined build flavor"
             echo "true" > /var/run/argo/outputs/parameters/needs-rebuild
           elif [ -z "$IMAGE_COMMIT" ] || [ "$IMAGE_COMMIT" != "$GIT_COMMIT" ]; then
             echo "Rebuild needed: code has changed or image not found"
@@ -176,12 +239,16 @@ spec:
         - dockerfile=/mnt/workspace
         - --opt
         - label:git.commit={{inputs.parameters.git-commit}}
+        - --opt
+        - label:build.flavor=combined-v1
+        - --opt
+        - filename=Dockerfile.combined
         - --output
-        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-train:latest,push=true,registry.insecure=true
+        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-training:latest,push=true,registry.insecure=true
         - --export-cache
-        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-train:buildcache,mode=max,registry.insecure=true
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-training:buildcache,mode=max,registry.insecure=true
         - --import-cache
-        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-train:buildcache,registry.insecure=true
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-training:buildcache,registry.insecure=true
       resources:
         requests:
           memory: "2Gi"
@@ -202,6 +269,19 @@ spec:
       - name: buildkitd
         mountPath: /home/user/.local/share/buildkit
 
+  - name: copy-latest-to-sha
+    inputs:
+      parameters:
+      - name: git-commit
+    container:
+      image: gcr.io/go-containerregistry/crane:debug
+      command: [crane]
+      args:
+        - copy
+        - --insecure
+        - registry.kube-system.svc.cluster.local:5000/proj10-training:latest
+        - registry.kube-system.svc.cluster.local:5000/proj10-training:{{inputs.parameters.git-commit}}
+
   - name: run-training
     outputs:
       parameters:
@@ -209,44 +289,75 @@ spec:
         valueFrom:
           path: /var/run/argo/outputs/parameters/modelversion
     container:
-      image: registry.kube-system.svc.cluster.local:5000/proj10-train:latest
+      image: registry.kube-system.svc.cluster.local:5000/proj10-training:latest
       command: [sh, -c]
       args:
         - |
           set -eu
-          python flow.py
-
-          # Argo (emissary executor) requires output parameters to be written
-          # under /var/run/argo/outputs/parameters/
           mkdir -p /var/run/argo/outputs/parameters
-          if [ -f /tmp/model_version ]; then
-            cp /tmp/model_version /var/run/argo/outputs/parameters/modelversion
+
+          MODEL_NAME="GemSpotWillVisit"
+
+          get_staging_version() {
+            MODEL_NAME="${MODEL_NAME}" python -c "import os,mlflow; from mlflow.tracking import MlflowClient; mlflow.set_tracking_uri(os.environ['MLFLOW_TRACKING_URI']); c=MlflowClient(); v=c.get_latest_versions(os.environ['MODEL_NAME'], stages=['Staging']); print(v[0].version if v else '')" 2>/dev/null || echo ""
+          }
+
+          BEFORE_VERSION="$(MODEL_NAME="${MODEL_NAME}" get_staging_version)"
+          echo "Staging version before retrain: ${BEFORE_VERSION:-<none>}"
+
+          python scripts/retrain_pipeline.py \
+            --skip-deploy \
+            --tracking-uri "${MLFLOW_TRACKING_URI}" \
+            --minio-endpoint "${ENDPOINT_URL}" \
+            --app-db-url "postgresql://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@postgres.proj10-platform.svc.cluster.local:5432/${POSTGRES_DBNAME}" \
+            --iceberg-db-url "postgresql+psycopg2://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@postgres.proj10-platform.svc.cluster.local:5432/iceberg_catalog" \
+            --experiment-name "GemSpot-WillVisit" \
+            --model-name "${MODEL_NAME}" \
+            --data-dir "/tmp/training_sets"
+
+          AFTER_VERSION="$(MODEL_NAME="${MODEL_NAME}" get_staging_version)"
+          echo "Staging version after retrain: ${AFTER_VERSION:-<none>}"
+
+          if [ -n "${AFTER_VERSION}" ] && [ "${AFTER_VERSION}" != "${BEFORE_VERSION}" ]; then
+            echo "${AFTER_VERSION}" > /var/run/argo/outputs/parameters/modelversion
+            echo "New staged model version detected: ${AFTER_VERSION}"
           else
-            # Avoid hard failure if training didn't emit a version.
             : > /var/run/argo/outputs/parameters/modelversion
+            echo "No newly staged model version detected in this run."
           fi
       env:
         - name: MLFLOW_TRACKING_URI
           value: "http://mlflow.proj10-platform.svc.cluster.local:8000"
-
-  - name: trigger-build
-    inputs:
-      parameters:
-      - name: model-version
-    resource:
-      action: create
-      manifest: |
-        apiVersion: argoproj.io/v1alpha1
-        kind: Workflow
-        metadata:
-          generateName: build-container-image-
-        spec:
-          workflowTemplateRef:
-            name: build-container-image
-          arguments:
-            parameters:
-            - name: model-version
-              value: "{{inputs.parameters.model-version}}"
+        - name: ENDPOINT_URL
+          value: "http://minio.proj10-platform.svc.cluster.local:9000"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: minio-credentials
+              key: accesskey
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-credentials
+              key: secretkey
+        - name: POSTGRES_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: password
+        - name: POSTGRES_DBNAME
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: dbname
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/workspace
 
   - name: set-development-alias
     inputs:
@@ -261,6 +372,6 @@ spec:
         pip install mlflow-skinny==3.9.0 > /dev/null
         export MLFLOW_TRACKING_URI=http://mlflow.proj10-platform.svc.cluster.local:8000
 
-        python -c "import mlflow; client = mlflow.tracking.MlflowClient(); client.set_registered_model_alias(name='proj10AdventureLogModel', alias='development', version='{{inputs.parameters.model-version}}')"
+        python -c "import mlflow; client = mlflow.tracking.MlflowClient(); client.set_registered_model_alias(name='GemSpotWillVisit', alias='development', version='{{inputs.parameters.model-version}}')"
 
         echo "Updated MLflow development alias to version {{inputs.parameters.model-version}}"

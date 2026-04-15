@@ -7,7 +7,11 @@ spec:
   arguments:
     parameters:
     - name: branch
-      value: mlops
+      value: main
+    - name: training-repo-url
+      value: https://github.com/rohitshididnyu/GemSpot_training.git
+    - name: batch-repo-url
+      value: https://github.com/lefteriskomvopoulos/gemspot.git
 
   # Compatibility: some clusters ignore seccompProfile/appArmorProfile fields
   # (or enforce defaults) unless annotations are also set.
@@ -39,9 +43,26 @@ spec:
             parameters:
             - name: branch
               value: "{{workflow.parameters.branch}}"
-      # Step 2: Build the training image and push to registry as :latest
+            - name: training-repo-url
+              value: "{{workflow.parameters.training-repo-url}}"
+            - name: batch-repo-url
+              value: "{{workflow.parameters.batch-repo-url}}"
+      # Step 2: Resolve git SHA to use immutable tag
+      - - name: resolve-commit
+          template: resolve-commit
+      # Step 3: Build the training image and push latest + immutable SHA tags
       - - name: buildkit-build
           template: buildkit-rootless
+          arguments:
+            parameters:
+            - name: git-commit
+              value: "{{steps.resolve-commit.outputs.parameters.git-commit}}"
+      - - name: tag-training-image-immutable
+          template: copy-latest-to-sha
+          arguments:
+            parameters:
+            - name: git-commit
+              value: "{{steps.resolve-commit.outputs.parameters.git-commit}}"
 
   # Template: Shallow clone of the git repository for faster checkout
   - name: git-clone
@@ -54,31 +75,71 @@ spec:
     inputs:
       parameters:
       - name: branch
+      - name: training-repo-url
+      - name: batch-repo-url
     container:
       image: alpine/git:v2.26.2
       workingDir: /mnt/workspace
       env:
       - name: GIT_TERMINAL_PROMPT
         value: "0"
-      command: [git]
+      command: [sh, -c]
       args:
-        - clone
-        - --depth
-        - "1"
-        - --filter=blob:none
-        - --no-tags
-        - --single-branch
-        - --branch
-        - "{{inputs.parameters.branch}}"
-        # TODO: Waiting to change to our own repo
-        - https://github.com/teaching-on-testbeds/gourmetgram-train.git
-        - .
+        - |
+          set -eu
+          # Argo PVC mount may contain leftover files; ensure clean clone target.
+          find /mnt/workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          git clone --depth 1 --filter=blob:none --no-tags --single-branch \
+            --branch "{{inputs.parameters.branch}}" \
+            "{{inputs.parameters.training-repo-url}}" .
+          rm -rf /tmp/gemspot-batch
+          git clone --depth 1 --filter=blob:none --no-tags --single-branch \
+            "{{inputs.parameters.batch-repo-url}}" /tmp/gemspot-batch
+          mkdir -p /mnt/workspace/gemspot
+          cp -R /tmp/gemspot-batch/batch_pipeline /mnt/workspace/gemspot/
+          cat > /mnt/workspace/Dockerfile.combined <<'EOF'
+          FROM python:3.11-slim
+          ENV PYTHONDONTWRITEBYTECODE=1
+          ENV PYTHONUNBUFFERED=1
+          ENV PYTHONPATH=/app/src
+          WORKDIR /app
+
+          COPY requirements.txt /app/requirements.txt
+          RUN pip install --no-cache-dir --upgrade pip && \
+              pip install --no-cache-dir -r /app/requirements.txt && \
+              pip install --no-cache-dir boto3 pyiceberg psycopg2-binary pyarrow
+
+          COPY . /app
+          COPY gemspot/batch_pipeline /gemspot/batch_pipeline
+
+          CMD ["python", "scripts/retrain_pipeline.py"]
+          EOF
       volumeMounts:
       - name: workdir
         mountPath: /mnt/workspace
 
+  - name: resolve-commit
+    script:
+      image: alpine/git:v2.26.2
+      workingDir: /mnt/workspace
+      command: [sh]
+      source: |
+        set -eu
+        git rev-parse --short=12 HEAD > /tmp/git-commit.txt
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/workspace
+    outputs:
+      parameters:
+      - name: git-commit
+        valueFrom:
+          path: /tmp/git-commit.txt
+
   # Template: Build container image using buildkit (rootless, no docker daemon required)
   - name: buildkit-rootless
+    inputs:
+      parameters:
+      - name: git-commit
     retryStrategy:
       limit: "3"
       retryPolicy: "Always"
@@ -99,12 +160,18 @@ spec:
         - context=/mnt/workspace
         - --local
         - dockerfile=/mnt/workspace
+        - --opt
+        - label:git.commit={{inputs.parameters.git-commit}}
+        - --opt
+        - label:build.flavor=combined-v1
+        - --opt
+        - filename=Dockerfile.combined
         - --output
-        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-train:latest,push=true,registry.insecure=true
+        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-training:latest,push=true,registry.insecure=true
         - --export-cache
-        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-train:buildcache,mode=max,registry.insecure=true
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-training:buildcache,mode=max,registry.insecure=true
         - --import-cache
-        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-train:buildcache,registry.insecure=true
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-training:buildcache,registry.insecure=true
       resources:
         requests:
           memory: "2Gi"
@@ -124,3 +191,16 @@ spec:
         mountPath: /mnt/workspace
       - name: buildkitd
         mountPath: /home/user/.local/share/buildkit
+
+  - name: copy-latest-to-sha
+    inputs:
+      parameters:
+      - name: git-commit
+    container:
+      image: gcr.io/go-containerregistry/crane:debug
+      command: [crane]
+      args:
+        - copy
+        - --insecure
+        - registry.kube-system.svc.cluster.local:5000/proj10-training:latest
+        - registry.kube-system.svc.cluster.local:5000/proj10-training:{{inputs.parameters.git-commit}}

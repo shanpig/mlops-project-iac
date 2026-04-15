@@ -7,6 +7,12 @@
     repo_dest: /tmp/proj10-iac
     workflow_dir: workflows
     argo_namespace: argo
+    github_auth_username: "{{ github_username | default('', true) }}"
+    github_auth_token: "{{ github_token | default('', true) }}"
+    workflow_secret_source_namespace: proj10-platform
+    workflow_runtime_secrets:
+      - minio-credentials
+      - postgres-credentials
     templates:
       - build-container-image.yaml
       - deploy-container-image.yaml
@@ -21,6 +27,43 @@
         repo: "{{ repo_url }}"
         dest: "{{ repo_dest }}"
         version: main
+
+    - name: Ensure workflow namespace exists
+      command: kubectl create namespace {{ argo_namespace }}
+      register: argo_ns_create
+      failed_when: argo_ns_create.rc != 0 and 'AlreadyExists' not in argo_ns_create.stderr
+      changed_when: "'created' in argo_ns_create.stdout.lower()"
+
+    - name: Verify source runtime secrets exist
+      command: kubectl -n {{ workflow_secret_source_namespace }} get secret {{ item }}
+      loop: "{{ workflow_runtime_secrets }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Sync runtime secrets from platform namespace to workflow namespace
+      shell: |
+        set -euo pipefail
+        kubectl -n {{ workflow_secret_source_namespace }} get secret {{ item }} -o json \
+        | python3 -c 'import json,sys; o=json.load(sys.stdin); print(json.dumps({"apiVersion":"v1","kind":"Secret","metadata":{"name":o["metadata"]["name"],"namespace":"{{ argo_namespace }}"},"type":o.get("type","Opaque"),"data":o.get("data",{})}))' \
+        | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      loop: "{{ workflow_runtime_secrets }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Ensure GitHub repo auth secret exists for private clone access
+      shell: |
+        set -euo pipefail
+        kubectl -n {{ argo_namespace }} create secret generic github-repo-auth \
+          --from-literal=username='{{ github_auth_username }}' \
+          --from-literal=token='{{ github_auth_token }}' \
+          --dry-run=client -o yaml \
+        | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      when: github_auth_username | length > 0 and github_auth_token | length > 0
+      no_log: true
 
     - name: Apply selected WorkflowTemplates to Argo namespace
       command: kubectl apply -n {{ argo_namespace }} -f {{ repo_dest }}/{{ workflow_dir }}/{{ item }}
