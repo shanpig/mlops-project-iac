@@ -1,3 +1,4 @@
 .env
 k8s/secrets/plain/
 *.pem
+.DS_Store
