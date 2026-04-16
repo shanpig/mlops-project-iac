@@ -18,11 +18,37 @@ spec:
         - name: stream-consumer
           image: {{ .Values.streamConsumer.image.repository }}:{{ .Values.streamConsumer.image.tag }}
           imagePullPolicy: IfNotPresent
-          command:
-            {{- toYaml .Values.streamConsumer.command | nindent 12 }}
+          command: ["sh", "-c"]
           args:
-            {{- toYaml .Values.streamConsumer.args | nindent 12 }}
+            - |
+              export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@postgres.{{ .Values.namespace }}.svc.cluster.local:5432/${PGDATABASE}"
+              exec python main.py
           env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.streamConsumer.postgresSecret.name | quote }}
+                  key: {{ .Values.streamConsumer.postgresSecret.keys.username | quote }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.streamConsumer.postgresSecret.name | quote }}
+                  key: {{ .Values.streamConsumer.postgresSecret.keys.password | quote }}
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.streamConsumer.postgresSecret.name | quote }}
+                  key: {{ .Values.streamConsumer.postgresSecret.keys.dbname | quote }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.streamConsumer.minioSecret.name | quote }}
+                  key: {{ .Values.streamConsumer.minioSecret.keys.accessKey | quote }}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.streamConsumer.minioSecret.name | quote }}
+                  key: {{ .Values.streamConsumer.minioSecret.keys.secretKey | quote }}
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: {{ .Values.streamConsumer.env.KAFKA_BOOTSTRAP_SERVERS | quote }}
             - name: KAFKA_CONSUMER_GROUP
@@ -35,8 +61,8 @@ spec:
               value: {{ .Values.streamConsumer.env.REDIS_PORT | quote }}
             - name: REDIS_DB
               value: {{ .Values.streamConsumer.env.REDIS_DB | quote }}
-            - name: MODERATION_TOPIC
-              value: {{ .Values.streamConsumer.env.MODERATION_TOPIC | quote }}
+            - name: ENDPOINT_URL
+              value: {{ .Values.streamConsumer.env.ENDPOINT_URL | quote }}
             - name: LOG_LEVEL
               value: {{ .Values.streamConsumer.env.LOG_LEVEL | quote }}
           resources:

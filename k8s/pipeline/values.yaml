@@ -51,27 +51,28 @@ streamConsumer:
   name: stream-consumer
   replicaCount: 1
   image:
-    repository: busybox
-    tag: "1.36"
+    repository: registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-consumer
+    tag: latest
+  postgresSecret:
+    name: postgres-credentials
+    keys:
+      username: username
+      password: password
+      dbname: dbname
+  minioSecret:
+    name: minio-credentials
+    keys:
+      accessKey: accesskey
+      secretKey: secretkey
   env:
     KAFKA_BOOTSTRAP_SERVERS: "redpanda:9092"
-    KAFKA_CONSUMER_GROUP: "proj10-stream-consumer"
-    KAFKA_TOPICS: "gourmetgram.views,gourmetgram.comments,gourmetgram.uploads,gourmetgram.flags"
+    KAFKA_CONSUMER_GROUP: "adventurelog-consumer"
+    KAFKA_TOPICS: "adventurelog.clicks,adventurelog.comments,adventurelog.rates"
     REDIS_HOST: "redis"
     REDIS_PORT: "6379"
     REDIS_DB: "0"
-    MODERATION_TOPIC: "gourmetgram.moderation_requests"
+    ENDPOINT_URL: "http://minio.proj10-platform.svc.cluster.local:9000"
     LOG_LEVEL: "INFO"
-  command:
-    - sh
-    - -c
-  args:
-    - |
-      echo "[stream-consumer] placeholder started";
-      while true; do
-        nc -z redpanda 9092 && nc -z redis 6379 && echo "[stream-consumer] redpanda+redis reachable";
-        sleep 20;
-      done
   resources:
     requests:
       cpu: "50m"
@@ -81,7 +82,7 @@ streamConsumer:
       memory: "256Mi"
 
 modelServer:
-  enabled: true
+  enabled: false
   name: model-server
   replicaCount: 1
   image:
@@ -97,6 +98,87 @@ modelServer:
     limits:
       cpu: "250m"
       memory: "256Mi"
+
+mlServing:
+  enabled: true
+  name: ml-serving
+  replicaCount: 1
+  image:
+    repository: registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-serving
+    tag: latest
+  service:
+    port: 8000
+  env:
+    MODEL_PATH: /models/gemspot_xgb.json
+    REDIS_URL: redis://redis:6379/0
+    LOG_LEVEL: INFO
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+mlApi:
+  enabled: true
+  name: ml-api
+  replicaCount: 1
+  image:
+    repository: registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-api
+    tag: latest
+  service:
+    port: 8000
+  postgresSecret:
+    name: postgres-credentials
+    keys:
+      username: username
+      password: password
+      dbname: dbname
+  env:
+    KAFKA_BOOTSTRAP_SERVERS: "redpanda:9092"
+    KAFKA_TOPIC_CLICKS: "adventurelog.clicks"
+    KAFKA_TOPIC_COMMENTS: "adventurelog.comments"
+    KAFKA_TOPIC_RATES: "adventurelog.rates"
+    REDIS_HOST: "redis"
+    REDIS_PORT: "6379"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+etlJob:
+  enabled: true
+  name: etl-job
+  image:
+    repository: registry.kube-system.svc.cluster.local:5000/proj10-gemspot-etl-job
+    tag: latest
+  schedule: "0 3 * * *"
+  suspend: true
+  postgresSecret:
+    name: postgres-credentials
+    keys:
+      username: username
+      password: password
+      dbname: dbname
+  minioSecret:
+    name: minio-credentials
+    keys:
+      accessKey: accesskey
+      secretKey: secretkey
+  env:
+    ENDPOINT_URL: "http://minio.proj10-platform.svc.cluster.local:9000"
+    ETL_NROWS: "1000"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
 
 airflow:
   enabled: true

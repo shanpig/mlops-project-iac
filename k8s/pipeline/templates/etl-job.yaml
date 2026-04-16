@@ -1,0 +1,59 @@
+{{- if .Values.etlJob.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.etlJob.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  schedule: {{ .Values.etlJob.schedule | quote }}
+  suspend: {{ .Values.etlJob.suspend }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: etl-job
+              image: {{ .Values.etlJob.image.repository }}:{{ .Values.etlJob.image.tag }}
+              imagePullPolicy: IfNotPresent
+              command: ["sh", "-c"]
+              args:
+                - |
+                  export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@postgres.{{ .Values.namespace }}.svc.cluster.local:5432/${PGDATABASE}"
+                  exec python etl.py
+              env:
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.etlJob.postgresSecret.name | quote }}
+                      key: {{ .Values.etlJob.postgresSecret.keys.username | quote }}
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.etlJob.postgresSecret.name | quote }}
+                      key: {{ .Values.etlJob.postgresSecret.keys.password | quote }}
+                - name: PGDATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.etlJob.postgresSecret.name | quote }}
+                      key: {{ .Values.etlJob.postgresSecret.keys.dbname | quote }}
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.etlJob.minioSecret.name | quote }}
+                      key: {{ .Values.etlJob.minioSecret.keys.accessKey | quote }}
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.etlJob.minioSecret.name | quote }}
+                      key: {{ .Values.etlJob.minioSecret.keys.secretKey | quote }}
+                - name: ENDPOINT_URL
+                  value: {{ .Values.etlJob.env.ENDPOINT_URL | quote }}
+                - name: ETL_NROWS
+                  value: {{ .Values.etlJob.env.ETL_NROWS | quote }}
+              resources:
+                {{- toYaml .Values.etlJob.resources | nindent 16 }}
+{{- end }}

@@ -1,0 +1,72 @@
+{{- if .Values.mlApi.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.mlApi.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: {{ .Values.mlApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.mlApi.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.mlApi.name }}
+    spec:
+      containers:
+        - name: ml-api
+          image: {{ .Values.mlApi.image.repository }}:{{ .Values.mlApi.image.tag }}
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@postgres.{{ .Values.namespace }}.svc.cluster.local:5432/${PGDATABASE}"
+              exec uvicorn app.main:app --host 0.0.0.0 --port {{ .Values.mlApi.service.port }}
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mlApi.postgresSecret.name | quote }}
+                  key: {{ .Values.mlApi.postgresSecret.keys.username | quote }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mlApi.postgresSecret.name | quote }}
+                  key: {{ .Values.mlApi.postgresSecret.keys.password | quote }}
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mlApi.postgresSecret.name | quote }}
+                  key: {{ .Values.mlApi.postgresSecret.keys.dbname | quote }}
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: {{ .Values.mlApi.env.KAFKA_BOOTSTRAP_SERVERS | quote }}
+            - name: KAFKA_TOPIC_CLICKS
+              value: {{ .Values.mlApi.env.KAFKA_TOPIC_CLICKS | quote }}
+            - name: KAFKA_TOPIC_COMMENTS
+              value: {{ .Values.mlApi.env.KAFKA_TOPIC_COMMENTS | quote }}
+            - name: KAFKA_TOPIC_RATES
+              value: {{ .Values.mlApi.env.KAFKA_TOPIC_RATES | quote }}
+            - name: REDIS_HOST
+              value: {{ .Values.mlApi.env.REDIS_HOST | quote }}
+            - name: REDIS_PORT
+              value: {{ .Values.mlApi.env.REDIS_PORT | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.mlApi.service.port }}
+          resources:
+            {{- toYaml .Values.mlApi.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.mlApi.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: {{ .Values.mlApi.name }}
+  ports:
+    - name: http
+      port: {{ .Values.mlApi.service.port }}
+      targetPort: http
+{{- end }}
