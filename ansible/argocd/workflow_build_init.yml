@@ -7,6 +7,16 @@
     workflow_file: workflows/build-initial-buildkit.yaml
     workflow_name: build-initial
     argo_namespace: argo
+    argocd_namespace: argocd
+    github_auth_username: "{{ github_username | default('', true) }}"
+    github_auth_token: "{{ github_token | default('', true) }}"
+    deploy_targets:
+      - app: proj10-staging
+        tag_prefix: staging
+      - app: proj10-canary
+        tag_prefix: canary
+      - app: proj10-production
+        tag_prefix: production
 
   tasks:
     - name: Clone or update proj10-iac repo
@@ -14,6 +24,15 @@
         repo: "{{ repo_url }}"
         dest: "{{ repo_dest }}"
         version: main   
+
+    - name: Ensure github-repo-auth secret exists when credentials are provided
+      when: github_auth_username | length > 0 and github_auth_token | length > 0
+      shell: |
+        kubectl -n {{ argo_namespace }} create secret generic github-repo-auth \
+          --from-literal=username='{{ github_auth_username }}' \
+          --from-literal=token='{{ github_auth_token }}' \
+          --dry-run=client -o yaml | kubectl apply -f -
+      no_log: true
 
     - name: Submit Argo Workflow
       command: kubectl -n {{ argo_namespace }} create -f {{ repo_dest }}/{{ workflow_file }}
@@ -42,3 +61,76 @@
       fail:
         msg: "Workflow {{ workflow_name_generated }} failed with status: {{ workflow_phase.stdout }}"
       when: workflow_phase.stdout != "Succeeded"
+
+    - name: Read workflow app version output
+      shell: |
+        python3 - <<'PY'
+        import json, subprocess
+        ns = "{{ argo_namespace }}"
+        wf = "{{ workflow_name_generated }}"
+        raw = subprocess.check_output(
+            ["kubectl", "-n", ns, "get", "workflow", wf, "-o", "json"],
+            text=True,
+        )
+        data = json.loads(raw)
+
+        # Preferred: top-level workflow outputs
+        params = (data.get("status", {}).get("outputs", {}) or {}).get("parameters", []) or []
+        for p in params:
+            if p.get("name") == "app-version" and p.get("value"):
+                print(p["value"])
+                raise SystemExit(0)
+
+        # Fallback: resolve-version node outputs
+        nodes = (data.get("status", {}).get("nodes", {}) or {})
+        for n in nodes.values():
+            if n.get("displayName") == "resolve-version":
+                nparams = (n.get("outputs", {}) or {}).get("parameters", []) or []
+                for p in nparams:
+                    if p.get("name") == "app-version" and p.get("value"):
+                        print(p["value"])
+                        raise SystemExit(0)
+        PY
+      register: workflow_app_version
+
+    - name: Fail if app version output is missing
+      fail:
+        msg: "Workflow {{ workflow_name_generated }} did not expose app-version output."
+      when: workflow_app_version.stdout | trim | length == 0
+
+    - name: Normalize app version string
+      set_fact:
+        workflow_app_version_clean: "{{ workflow_app_version.stdout | trim }}"
+
+    - name: Get ArgoCD admin password
+      command: >
+        kubectl get secret -n {{ argocd_namespace }} argocd-initial-admin-secret -o jsonpath="{.data.password}"
+      register: argocd_password_b64
+
+    - name: Decode ArgoCD password
+      shell: echo {{ argocd_password_b64.stdout }} | base64 --decode
+      register: argocd_password
+      no_log: true
+
+    - name: Login to ArgoCD
+      command: >
+        argocd login localhost --username admin
+        --password "{{ argocd_password.stdout }}"
+        --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}
+      changed_when: false
+      no_log: true
+
+    - name: Set immutable image tag on app targets
+      loop: "{{ deploy_targets }}"
+      command: >
+        argocd app set {{ item.app }}
+        --helm-set-string frontend.image.tag={{ item.tag_prefix }}-{{ workflow_app_version_clean }}
+        --helm-set-string backend.image.tag={{ item.tag_prefix }}-{{ workflow_app_version_clean }}
+        --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}
+
+    - name: Sync app targets
+      loop: "{{ deploy_targets }}"
+      command: >
+        argocd app sync {{ item.app }}
+        --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}
+      changed_when: false
