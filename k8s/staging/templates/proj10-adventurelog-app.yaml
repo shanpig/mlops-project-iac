@@ -136,6 +136,10 @@ spec:
               value: {{ .Values.app.csrfTrustedOrigins | quote }}
             - name: DEBUG
               value: {{ .Values.app.debug | quote }}
+            - name: ML_SERVING_URL
+              value: {{ .Values.app.mlServingUrl | quote }}
+            - name: ML_API_URL
+              value: {{ .Values.app.mlApiUrl | quote }}
           ports:
             - containerPort: {{ .Values.backend.service.nginxPort }}
             - containerPort: {{ .Values.backend.service.port }}
