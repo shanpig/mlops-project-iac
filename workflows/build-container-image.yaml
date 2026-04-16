@@ -91,7 +91,7 @@ spec:
         - --single-branch
         - --branch
         - workflow
-        - https://github.com/shanpig/mlops-project-app.git
+        - https://github.com/lefteriskomvopoulos/GemSpotApp.git
         - .
       volumeMounts:
       - name: workdir

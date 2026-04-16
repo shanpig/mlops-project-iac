@@ -28,7 +28,7 @@ spec:
   templates:
   - name: buildkit-rootless-build-flow
     steps:
-      # Step 1: Clone the AdventureLog app repository fork
+      # Step 1: Clone the GemSpotApp repository
       - - name: clone-repo
           template: git-clone
       # Step 2: Resolve a unique app version from timestamp + commit SHA
@@ -183,7 +183,7 @@ spec:
         - clone
         - --depth
         - "1"
-        - https://github.com/shanpig/mlops-project-app.git
+        - https://github.com/lefteriskomvopoulos/GemSpotApp.git
         - .
       volumeMounts:
       - name: workdir
