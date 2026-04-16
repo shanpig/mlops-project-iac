@@ -1,0 +1,450 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: build-ml-services-initial-
+spec:
+  entrypoint: build-flow
+  arguments:
+    parameters:
+    - name: app-repo-url
+      value: https://github.com/lefteriskomvopoulos/GemSpotApp.git
+    - name: app-branch
+      value: main
+    - name: data-repo-url
+      value: https://github.com/lefteriskomvopoulos/gemspot.git
+    - name: data-branch
+      value: main
+
+  podMetadata:
+    annotations:
+      seccomp.security.alpha.kubernetes.io/pod: unconfined
+      container.apparmor.security.beta.kubernetes.io/main: unconfined
+
+  volumeClaimTemplates:
+  - metadata:
+      name: workdir
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 3Gi
+
+  volumes:
+  - name: buildkitd
+    emptyDir: {}
+
+  templates:
+  - name: build-flow
+    steps:
+      - - name: clone-sources
+          template: clone-sources
+      - - name: resolve-version
+          template: resolve-version
+      - - name: build-server
+          template: buildkit-server
+          arguments:
+            parameters:
+            - name: image-tag
+              value: "{{steps.resolve-version.outputs.parameters.image-version}}"
+        - name: build-ml-serving
+          template: buildkit-ml-serving
+          arguments:
+            parameters:
+            - name: image-tag
+              value: "{{steps.resolve-version.outputs.parameters.image-version}}"
+        - name: build-ml-api
+          template: buildkit-ml-api
+          arguments:
+            parameters:
+            - name: image-tag
+              value: "{{steps.resolve-version.outputs.parameters.image-version}}"
+        - name: build-ml-consumer
+          template: buildkit-ml-consumer
+          arguments:
+            parameters:
+            - name: image-tag
+              value: "{{steps.resolve-version.outputs.parameters.image-version}}"
+        - name: build-etl-job
+          template: buildkit-etl-job
+          arguments:
+            parameters:
+            - name: image-tag
+              value: "{{steps.resolve-version.outputs.parameters.image-version}}"
+      - - name: tag-server-latest
+          template: copy-tag
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-gemspot-server
+            - name: src-tag
+              value: "{{steps.resolve-version.outputs.parameters.image-version}}"
+            - name: dst-tag
+              value: latest
+        - name: tag-ml-serving-latest
+          template: copy-tag
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-gemspot-ml-serving
+            - name: src-tag
+              value: "{{steps.resolve-version.outputs.parameters.image-version}}"
+            - name: dst-tag
+              value: latest
+        - name: tag-ml-api-latest
+          template: copy-tag
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-gemspot-ml-api
+            - name: src-tag
+              value: "{{steps.resolve-version.outputs.parameters.image-version}}"
+            - name: dst-tag
+              value: latest
+        - name: tag-ml-consumer-latest
+          template: copy-tag
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-gemspot-ml-consumer
+            - name: src-tag
+              value: "{{steps.resolve-version.outputs.parameters.image-version}}"
+            - name: dst-tag
+              value: latest
+        - name: tag-etl-job-latest
+          template: copy-tag
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-gemspot-etl-job
+            - name: src-tag
+              value: "{{steps.resolve-version.outputs.parameters.image-version}}"
+            - name: dst-tag
+              value: latest
+
+  - name: clone-sources
+    retryStrategy:
+      limit: "5"
+      retryPolicy: "Always"
+      backoff:
+        duration: "10s"
+        factor: "2"
+    container:
+      image: alpine/git:v2.26.2
+      workingDir: /mnt/workspace
+      env:
+      - name: GITHUB_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: github-repo-auth
+            key: username
+            optional: true
+      - name: GITHUB_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: github-repo-auth
+            key: token
+            optional: true
+      command: [sh, -c]
+      args:
+        - |
+          set -eu
+          rm -rf /mnt/workspace/app /mnt/workspace/data
+          APP_URL="{{workflow.parameters.app-repo-url}}"
+          DATA_URL="{{workflow.parameters.data-repo-url}}"
+          if [ -n "${GITHUB_USERNAME:-}" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
+            APP_URL=$(echo "$APP_URL" | sed "s#https://github.com/#https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/#")
+            DATA_URL=$(echo "$DATA_URL" | sed "s#https://github.com/#https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/#")
+          fi
+          git clone --depth 1 --branch "{{workflow.parameters.app-branch}}" "$APP_URL" /mnt/workspace/app
+          git clone --depth 1 --branch "{{workflow.parameters.data-branch}}" "$DATA_URL" /mnt/workspace/data
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/workspace
+
+  - name: resolve-version
+    script:
+      image: alpine/git:v2.26.2
+      command: [sh]
+      source: |
+        set -eu
+        APP_SHA="$(git -C /mnt/workspace/app rev-parse --short HEAD)"
+        DATA_SHA="$(git -C /mnt/workspace/data rev-parse --short HEAD)"
+        TS="$(date +%Y%m%d%H%M%S)"
+        echo "${TS}-${APP_SHA}-${DATA_SHA}" > /tmp/image-version.txt
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/workspace
+    outputs:
+      parameters:
+      - name: image-version
+        valueFrom:
+          path: /tmp/image-version.txt
+
+  - name: buildkit-server
+    retryStrategy:
+      limit: "3"
+      retryPolicy: "Always"
+      backoff:
+        duration: "30s"
+        factor: "2"
+    inputs:
+      parameters:
+      - name: image-tag
+    container:
+      image: moby/buildkit:rootless
+      env:
+      - name: BUILDKITD_FLAGS
+        value: --oci-worker-no-process-sandbox
+      command: [buildctl-daemonless.sh]
+      args:
+        - build
+        - --frontend
+        - dockerfile.v0
+        - --local
+        - context=/mnt/workspace/app/backend
+        - --local
+        - dockerfile=/mnt/workspace/app/backend
+        - --output
+        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-server:{{inputs.parameters.image-tag}},push=true,registry.insecure=true
+        - --export-cache
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-server:buildcache,mode=max,registry.insecure=true
+        - --import-cache
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-server:buildcache,registry.insecure=true
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "500m"
+        limits:
+          memory: "3Gi"
+          cpu: "1"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: Unconfined
+        appArmorProfile:
+          type: Unconfined
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/workspace
+      - name: buildkitd
+        mountPath: /home/user/.local/share/buildkit
+
+  - name: buildkit-ml-serving
+    retryStrategy:
+      limit: "3"
+      retryPolicy: "Always"
+      backoff:
+        duration: "30s"
+        factor: "2"
+    inputs:
+      parameters:
+      - name: image-tag
+    container:
+      image: moby/buildkit:rootless
+      env:
+      - name: BUILDKITD_FLAGS
+        value: --oci-worker-no-process-sandbox
+      command: [buildctl-daemonless.sh]
+      args:
+        - build
+        - --frontend
+        - dockerfile.v0
+        - --local
+        - context=/mnt/workspace/app/ml-serving
+        - --local
+        - dockerfile=/mnt/workspace/app/ml-serving
+        - --output
+        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-serving:{{inputs.parameters.image-tag}},push=true,registry.insecure=true
+        - --export-cache
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-serving:buildcache,mode=max,registry.insecure=true
+        - --import-cache
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-serving:buildcache,registry.insecure=true
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "500m"
+        limits:
+          memory: "3Gi"
+          cpu: "1"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: Unconfined
+        appArmorProfile:
+          type: Unconfined
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/workspace
+      - name: buildkitd
+        mountPath: /home/user/.local/share/buildkit
+
+  - name: buildkit-ml-api
+    retryStrategy:
+      limit: "3"
+      retryPolicy: "Always"
+      backoff:
+        duration: "30s"
+        factor: "2"
+    inputs:
+      parameters:
+      - name: image-tag
+    container:
+      image: moby/buildkit:rootless
+      env:
+      - name: BUILDKITD_FLAGS
+        value: --oci-worker-no-process-sandbox
+      command: [buildctl-daemonless.sh]
+      args:
+        - build
+        - --frontend
+        - dockerfile.v0
+        - --local
+        - context=/mnt/workspace/data
+        - --local
+        - dockerfile=/mnt/workspace/data
+        - --opt
+        - filename=api_v2/Dockerfile
+        - --output
+        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-api:{{inputs.parameters.image-tag}},push=true,registry.insecure=true
+        - --export-cache
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-api:buildcache,mode=max,registry.insecure=true
+        - --import-cache
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-api:buildcache,registry.insecure=true
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "500m"
+        limits:
+          memory: "3Gi"
+          cpu: "1"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: Unconfined
+        appArmorProfile:
+          type: Unconfined
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/workspace
+      - name: buildkitd
+        mountPath: /home/user/.local/share/buildkit
+
+  - name: buildkit-ml-consumer
+    retryStrategy:
+      limit: "3"
+      retryPolicy: "Always"
+      backoff:
+        duration: "30s"
+        factor: "2"
+    inputs:
+      parameters:
+      - name: image-tag
+    container:
+      image: moby/buildkit:rootless
+      env:
+      - name: BUILDKITD_FLAGS
+        value: --oci-worker-no-process-sandbox
+      command: [buildctl-daemonless.sh]
+      args:
+        - build
+        - --frontend
+        - dockerfile.v0
+        - --local
+        - context=/mnt/workspace/data/stream_consumer
+        - --local
+        - dockerfile=/mnt/workspace/data/stream_consumer
+        - --output
+        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-consumer:{{inputs.parameters.image-tag}},push=true,registry.insecure=true
+        - --export-cache
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-consumer:buildcache,mode=max,registry.insecure=true
+        - --import-cache
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-consumer:buildcache,registry.insecure=true
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "500m"
+        limits:
+          memory: "3Gi"
+          cpu: "1"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: Unconfined
+        appArmorProfile:
+          type: Unconfined
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/workspace
+      - name: buildkitd
+        mountPath: /home/user/.local/share/buildkit
+
+  - name: buildkit-etl-job
+    retryStrategy:
+      limit: "3"
+      retryPolicy: "Always"
+      backoff:
+        duration: "30s"
+        factor: "2"
+    inputs:
+      parameters:
+      - name: image-tag
+    container:
+      image: moby/buildkit:rootless
+      env:
+      - name: BUILDKITD_FLAGS
+        value: --oci-worker-no-process-sandbox
+      command: [buildctl-daemonless.sh]
+      args:
+        - build
+        - --frontend
+        - dockerfile.v0
+        - --local
+        - context=/mnt/workspace/data
+        - --local
+        - dockerfile=/mnt/workspace/data
+        - --opt
+        - filename=Dockerfile.etl.cpu
+        - --output
+        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-etl-job:{{inputs.parameters.image-tag}},push=true,registry.insecure=true
+        - --export-cache
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-etl-job:buildcache,mode=max,registry.insecure=true
+        - --import-cache
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-etl-job:buildcache,registry.insecure=true
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "500m"
+        limits:
+          memory: "3Gi"
+          cpu: "1"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: Unconfined
+        appArmorProfile:
+          type: Unconfined
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/workspace
+      - name: buildkitd
+        mountPath: /home/user/.local/share/buildkit
+
+  - name: copy-tag
+    inputs:
+      parameters:
+      - name: image-name
+      - name: src-tag
+      - name: dst-tag
+    container:
+      image: gcr.io/go-containerregistry/crane:debug
+      command: [crane]
+      args:
+        - copy
+        - --insecure
+        - registry.kube-system.svc.cluster.local:5000/{{inputs.parameters.image-name}}:{{inputs.parameters.src-tag}}
+        - registry.kube-system.svc.cluster.local:5000/{{inputs.parameters.image-name}}:{{inputs.parameters.dst-tag}}
