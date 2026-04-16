@@ -3,6 +3,7 @@
 This folder contains two playbooks:
 
 - `prepare_k8s_secrets.yml` (run on local laptop)
+- `seal_k8s_secrets.yml` (run on local laptop)
 - `apply_k8s_secrets.yml` (run on remote node1)
 
 ## 1) Local: Install `kubeseal`
@@ -87,16 +88,18 @@ rm -f /tmp/proj10-admin.conf.bak
 
 ## 5) Local: Seal generated manifests
 
-Fetch cert from cluster and seal each generated plain secret into `k8s/secrets/`:
+Use the sealing playbook (recommended):
 
 ```bash
-kubeseal --controller-namespace kube-system --controller-name sealed-secrets-controller --fetch-cert > sealed-secrets-cert.pem
-for f in k8s/secrets/plain/*.yaml; do
-  out="k8s/secrets/$(basename "${f%.yaml}")-sealedsecret.yaml"
-  kubeseal --format yaml --cert sealed-secrets-cert.pem < "$f" > "$out"
-  echo "Wrote $out"
-done
+ansible-playbook ansible/secrets/seal_k8s_secrets.yml
 ```
+
+This playbook:
+
+- Fetches the Sealed Secrets controller cert from your current `kubectl` context
+- Seals all files from `k8s/secrets/plain/*.yaml`
+- Writes canonical outputs to `k8s/secrets/*-sealedsecret.yaml`
+- Removes legacy duplicate names like `*-secret-sealedsecret.yaml`
 
 Commit and push only `k8s/secrets/*-sealedsecret.yaml`.
 
