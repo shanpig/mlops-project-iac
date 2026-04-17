@@ -13,6 +13,15 @@
     workflow_runtime_secrets:
       - minio-credentials
       - postgres-credentials
+    workflow_required_secret_keys:
+      postgres-credentials:
+        - host
+        - username
+        - password
+        - dbname
+      minio-credentials:
+        - accesskey
+        - secretkey
     templates:
       - build-container-image.yaml
       - deploy-container-image.yaml
@@ -40,6 +49,17 @@
       loop_control:
         label: "{{ item }}"
 
+    - name: Verify required keys are present in source runtime secrets
+      command: >
+        kubectl -n {{ workflow_secret_source_namespace }} get secret {{ item.0.key }}
+        -o jsonpath="{.data.{{ item.1 }}}"
+      register: source_secret_key_checks
+      loop: "{{ workflow_required_secret_keys | dict2items | subelements('value') }}"
+      loop_control:
+        label: "{{ item.0.key }}.{{ item.1 }}"
+      changed_when: false
+      failed_when: source_secret_key_checks.stdout | default('') | trim == ""
+
     - name: Sync runtime secrets from platform namespace to workflow namespace
       shell: |
         set -euo pipefail
@@ -51,6 +71,17 @@
       loop: "{{ workflow_runtime_secrets }}"
       loop_control:
         label: "{{ item }}"
+
+    - name: Verify required keys are present in workflow runtime secrets
+      command: >
+        kubectl -n {{ argo_namespace }} get secret {{ item.0.key }}
+        -o jsonpath="{.data.{{ item.1 }}}"
+      register: target_secret_key_checks
+      loop: "{{ workflow_required_secret_keys | dict2items | subelements('value') }}"
+      loop_control:
+        label: "{{ item.0.key }}.{{ item.1 }}"
+      changed_when: false
+      failed_when: target_secret_key_checks.stdout | default('') | trim == ""
 
     - name: Ensure GitHub repo auth secret exists for private clone access
       shell: |
