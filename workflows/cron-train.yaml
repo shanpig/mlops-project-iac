@@ -17,6 +17,7 @@ spec:
 
   # Workflow specification - this gets triggered on schedule
   workflowSpec:
+    serviceAccountName: cron-train-trigger
     entrypoint: scheduled-training
 
     templates:
@@ -36,3 +37,32 @@ spec:
           spec:
             workflowTemplateRef:
               name: train-model
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cron-train-trigger
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cron-train-trigger
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflows"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtemplates"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cron-train-trigger
+subjects:
+  - kind: ServiceAccount
+    name: cron-train-trigger
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cron-train-trigger

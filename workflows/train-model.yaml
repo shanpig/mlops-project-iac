@@ -309,8 +309,8 @@ spec:
             --skip-deploy \
             --tracking-uri "${MLFLOW_TRACKING_URI}" \
             --minio-endpoint "${ENDPOINT_URL}" \
-            --app-db-url "postgresql://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@postgres.proj10-platform.svc.cluster.local:5432/${POSTGRES_DBNAME}" \
-            --iceberg-db-url "postgresql+psycopg2://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@postgres.proj10-platform.svc.cluster.local:5432/iceberg_catalog" \
+            --app-db-url "postgresql://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DBNAME}" \
+            --iceberg-db-url "postgresql+psycopg2://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/iceberg_catalog" \
             --experiment-name "GemSpot-WillVisit" \
             --model-name "${MODEL_NAME}" \
             --data-dir "/tmp/training_sets"
@@ -345,6 +345,11 @@ spec:
             secretKeyRef:
               name: postgres-credentials
               key: username
+        - name: POSTGRES_HOST
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: host
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
