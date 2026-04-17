@@ -56,6 +56,7 @@ streamConsumer:
   postgresSecret:
     name: postgres-credentials
     keys:
+      host: host
       username: username
       password: password
       dbname: dbname
@@ -132,6 +133,7 @@ mlApi:
   postgresSecret:
     name: postgres-credentials
     keys:
+      host: host
       username: username
       password: password
       dbname: dbname
@@ -161,6 +163,7 @@ etlJob:
   postgresSecret:
     name: postgres-credentials
     keys:
+      host: host
       username: username
       password: password
       dbname: dbname
@@ -214,7 +217,7 @@ adminer:
   service:
     port: 5050
   externalIP: "0.0.0.0"
-  defaultServer: postgres
+  defaultServer: proj10-postgres.proj10-staging.svc.cluster.local
   resources:
     requests:
       cpu: "50m"

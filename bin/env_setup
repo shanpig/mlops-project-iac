@@ -77,6 +77,7 @@ function render_secrets_from_templates {
     local keys=(
         MINIO_ACCESS_KEY
         MINIO_SECRET_KEY
+        PLATFORM_POSTGRES_HOST
         PLATFORM_POSTGRES_USERNAME
         PLATFORM_POSTGRES_PASSWORD
         PLATFORM_POSTGRES_DBNAME

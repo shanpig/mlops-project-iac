@@ -22,9 +22,14 @@ spec:
               command: ["sh", "-c"]
               args:
                 - |
-                  export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@postgres.{{ .Values.namespace }}.svc.cluster.local:5432/${PGDATABASE}"
+                  export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:5432/${PGDATABASE}"
                   exec python etl.py
               env:
+                - name: PGHOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.etlJob.postgresSecret.name | quote }}
+                      key: {{ .Values.etlJob.postgresSecret.keys.host | quote }}
                 - name: PGUSER
                   valueFrom:
                     secretKeyRef:
