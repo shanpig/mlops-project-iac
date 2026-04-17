@@ -80,7 +80,7 @@
         --helm-set-string minio.externalIP={{ external_ip }} \
         --helm-set-string mlflow.externalIP={{ external_ip }} \
         --port-forward --port-forward-namespace=argocd \
-        --sync-policy automated --self-heal
+        --sync-policy automated --self-heal --auto-prune
       register: app_create
 
     - name: Update ArgoCD Helm application if it exists
@@ -91,5 +91,13 @@
         --helm-set-string gateway.externalIP={{ external_ip }} \
         --helm-set-string minio.externalIP={{ external_ip }} \
         --helm-set-string mlflow.externalIP={{ external_ip }} \
+        --sync-policy automated --self-heal --auto-prune \
         --port-forward --port-forward-namespace=argocd
       register: app_update
+
+    - name: Sync platform app with prune to remove obsolete resources
+      command: >
+        argocd app sync {{ app_name }} --prune --grpc-web \
+        --port-forward --port-forward-namespace=argocd
+      register: app_sync
+      changed_when: "'Synced' in app_sync.stdout or 'successfully synced' in app_sync.stdout"
