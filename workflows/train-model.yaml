@@ -53,6 +53,8 @@ spec:
             parameters:
             - name: git-commit
               value: "{{steps.check-code-changes.outputs.parameters.git-commit}}"
+            - name: batch-commit
+              value: "{{steps.check-code-changes.outputs.parameters.batch-commit}}"
           when: "'{{steps.check-code-changes.outputs.parameters.needs-rebuild}}' == 'true'"
       - - name: tag-training-image-immutable
           template: copy-latest-to-sha
@@ -88,6 +90,9 @@ spec:
       - name: git-commit
         valueFrom:
           path: /var/run/argo/outputs/parameters/git-commit
+      - name: batch-commit
+        valueFrom:
+          path: /var/run/argo/outputs/parameters/batch-commit
     retryStrategy:
       limit: "5"
       retryPolicy: "Always"
@@ -162,11 +167,14 @@ spec:
           
           # Get current git commit (short SHA used as immutable image tag)
           GIT_COMMIT=$(git rev-parse --short=12 HEAD)
+          BATCH_COMMIT=$(git -C /tmp/gemspot-batch rev-parse --short=12 HEAD)
           echo "Current git commit: $GIT_COMMIT"
+          echo "Current batch git commit: $BATCH_COMMIT"
           
           # Try to get the commit label from the existing image in registry
           REGISTRY="registry.kube-system.svc.cluster.local:5000"
           IMAGE_COMMIT=""
+          IMAGE_BATCH_COMMIT=""
           IMAGE_FLAVOR=""
           
           # Query registry for image manifest and config to get labels
@@ -181,17 +189,20 @@ spec:
               CONFIG=$(curl -sf "http://${REGISTRY}/v2/proj10-training/blobs/${CONFIG_DIGEST}" 2>/dev/null || echo "")
               if [ -n "$CONFIG" ]; then
                 IMAGE_COMMIT=$(echo "$CONFIG" | jq -r '.config.Labels["git.commit"] // empty' 2>/dev/null || echo "")
+                IMAGE_BATCH_COMMIT=$(echo "$CONFIG" | jq -r '.config.Labels["batch.commit"] // empty' 2>/dev/null || echo "")
                 IMAGE_FLAVOR=$(echo "$CONFIG" | jq -r '.config.Labels["build.flavor"] // empty' 2>/dev/null || echo "")
               fi
             fi
           fi
           
           echo "Image git commit label: ${IMAGE_COMMIT:-<not found>}"
+          echo "Image batch git commit label: ${IMAGE_BATCH_COMMIT:-<not found>}"
           echo "Image build flavor label: ${IMAGE_FLAVOR:-<not found>}"
           
           # Prepare output directory
           mkdir -p /var/run/argo/outputs/parameters
           echo "$GIT_COMMIT" > /var/run/argo/outputs/parameters/git-commit
+          echo "$BATCH_COMMIT" > /var/run/argo/outputs/parameters/batch-commit
           
           # Determine if rebuild is needed
           # Always rebuild for non-default branches
@@ -199,11 +210,14 @@ spec:
           if [ "$BRANCH" != "main" ]; then
             echo "Rebuild needed: non-default branch '$BRANCH' specified"
             echo "true" > /var/run/argo/outputs/parameters/needs-rebuild
-          elif [ "${IMAGE_FLAVOR}" != "combined-v1" ]; then
+          elif [ "${IMAGE_FLAVOR}" != "combined-v2" ]; then
             echo "Rebuild needed: image is missing required combined build flavor"
             echo "true" > /var/run/argo/outputs/parameters/needs-rebuild
           elif [ -z "$IMAGE_COMMIT" ] || [ "$IMAGE_COMMIT" != "$GIT_COMMIT" ]; then
             echo "Rebuild needed: code has changed or image not found"
+            echo "true" > /var/run/argo/outputs/parameters/needs-rebuild
+          elif [ -z "$IMAGE_BATCH_COMMIT" ] || [ "$IMAGE_BATCH_COMMIT" != "$BATCH_COMMIT" ]; then
+            echo "Rebuild needed: batch/data repo has changed or image is missing batch commit label"
             echo "true" > /var/run/argo/outputs/parameters/needs-rebuild
           else
             echo "No rebuild needed: image is up to date"
@@ -218,6 +232,7 @@ spec:
     inputs:
       parameters:
       - name: git-commit
+      - name: batch-commit
     retryStrategy:
       limit: "3"
       retryPolicy: "Always"
@@ -241,7 +256,9 @@ spec:
         - --opt
         - label:git.commit={{inputs.parameters.git-commit}}
         - --opt
-        - label:build.flavor=combined-v1
+        - label:batch.commit={{inputs.parameters.batch-commit}}
+        - --opt
+        - label:build.flavor=combined-v2
         - --opt
         - filename=Dockerfile.combined
         - --output

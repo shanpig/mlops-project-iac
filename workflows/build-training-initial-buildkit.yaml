@@ -164,7 +164,7 @@ spec:
         - --opt
         - label:git.commit={{inputs.parameters.git-commit}}
         - --opt
-        - label:build.flavor=combined-v1
+        - label:build.flavor=combined-v2
         - --opt
         - filename=Dockerfile.combined
         - --output
