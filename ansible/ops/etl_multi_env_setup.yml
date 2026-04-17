@@ -1,0 +1,201 @@
+---
+- name: Configure ETL for staging/canary/production namespaces
+  hosts: node1
+  become: yes
+  vars:
+    platform_namespace: proj10-platform
+    target_env_namespaces:
+      - proj10-staging
+      - proj10-canary
+      - proj10-production
+    etl_cronjob_name: etl-job
+    etl_schedule: "0 3 * * *"
+    etl_suspend: true
+    etl_nrows: "1000"
+    run_ml_table_init: true
+    # App charts define these in k8s/{staging,canary,production}/values.yaml
+    app_postgres_user: adventure
+    app_postgres_db: database
+    etl_requests_cpu: "500m"
+    etl_requests_memory: "1Gi"
+    etl_limits_cpu: "2"
+    etl_limits_memory: "4Gi"
+    # Leave empty to auto-detect from proj10-platform/etl-job cronjob.
+    etl_image: ""
+    trigger_bootstrap_once: false
+    force_trigger_bootstrap: false
+
+  tasks:
+    - name: Ensure target namespaces exist
+      command: kubectl get namespace {{ item }}
+      loop: "{{ target_env_namespaces }}"
+      changed_when: false
+
+    - name: Read platform MinIO access key
+      command: >
+        kubectl -n {{ platform_namespace }} get secret minio-credentials
+        -o jsonpath={.data.accesskey}
+      register: minio_access_b64
+      changed_when: false
+
+    - name: Read platform MinIO secret key
+      command: >
+        kubectl -n {{ platform_namespace }} get secret minio-credentials
+        -o jsonpath={.data.secretkey}
+      register: minio_secret_b64
+      changed_when: false
+
+    - name: Decode MinIO credentials
+      set_fact:
+        minio_access_key: "{{ minio_access_b64.stdout | b64decode }}"
+        minio_secret_key: "{{ minio_secret_b64.stdout | b64decode }}"
+
+    - name: Sync minio-credentials secret into each app namespace
+      shell: >
+        kubectl -n {{ item }} create secret generic minio-credentials
+        --from-literal=accesskey='{{ minio_access_key }}'
+        --from-literal=secretkey='{{ minio_secret_key }}'
+        --dry-run=client -o yaml | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      loop: "{{ target_env_namespaces }}"
+      register: minio_sync_result
+      changed_when: >
+        ('created' in minio_sync_result.stdout) or
+        ('configured' in minio_sync_result.stdout)
+
+    - name: Initialize ML tables in each environment database
+      when: run_ml_table_init
+      command: kubectl -n {{ item }} exec deploy/proj10-backend -- python manage.py ml_init_tables
+      loop: "{{ target_env_namespaces }}"
+      register: ml_init_result
+      changed_when: false
+
+    - name: Detect ETL image from platform cronjob when not provided
+      when: etl_image | length == 0
+      command: >
+        kubectl -n {{ platform_namespace }} get cronjob {{ etl_cronjob_name }}
+        -o jsonpath={.spec.jobTemplate.spec.template.spec.containers[0].image}
+      register: detected_etl_image
+      changed_when: false
+
+    - name: Resolve ETL image
+      set_fact:
+        effective_etl_image: >-
+          {{
+            etl_image if (etl_image | length > 0)
+            else (detected_etl_image.stdout | trim)
+          }}
+
+    - name: Fail if ETL image could not be resolved
+      assert:
+        that:
+          - effective_etl_image | length > 0
+        fail_msg: >
+          Could not resolve ETL image.
+          Set etl_image explicitly or ensure {{ platform_namespace }}/{{ etl_cronjob_name }} exists.
+
+    - name: Apply env-specific ETL CronJobs
+      shell: |
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: batch/v1
+        kind: CronJob
+        metadata:
+          name: {{ etl_cronjob_name }}
+          namespace: {{ item }}
+        spec:
+          schedule: "{{ etl_schedule }}"
+          suspend: {{ etl_suspend | lower }}
+          concurrencyPolicy: Forbid
+          successfulJobsHistoryLimit: 1
+          failedJobsHistoryLimit: 3
+          jobTemplate:
+            spec:
+              template:
+                spec:
+                  restartPolicy: OnFailure
+                  containers:
+                    - name: etl-job
+                      image: {{ effective_etl_image }}
+                      imagePullPolicy: IfNotPresent
+                      command: ["sh", "-c"]
+                      args:
+                        - |
+                          export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:5432/${PGDATABASE}"
+                          exec python etl.py
+                      env:
+                        - name: PGHOST
+                          value: proj10-postgres.{{ item }}.svc.cluster.local
+                        - name: PGUSER
+                          value: "{{ app_postgres_user }}"
+                        - name: PGPASSWORD
+                          valueFrom:
+                            secretKeyRef:
+                              name: proj10-adventurelog-secrets
+                              key: POSTGRES_PASSWORD
+                        - name: PGDATABASE
+                          value: "{{ app_postgres_db }}"
+                        - name: AWS_ACCESS_KEY_ID
+                          valueFrom:
+                            secretKeyRef:
+                              name: minio-credentials
+                              key: accesskey
+                        - name: AWS_SECRET_ACCESS_KEY
+                          valueFrom:
+                            secretKeyRef:
+                              name: minio-credentials
+                              key: secretkey
+                        - name: ENDPOINT_URL
+                          value: http://minio.proj10-platform.svc.cluster.local:9000
+                        - name: ETL_NROWS
+                          value: "{{ etl_nrows }}"
+                      resources:
+                        requests:
+                          cpu: "{{ etl_requests_cpu }}"
+                          memory: "{{ etl_requests_memory }}"
+                        limits:
+                          cpu: "{{ etl_limits_cpu }}"
+                          memory: "{{ etl_limits_memory }}"
+        EOF
+      args:
+        executable: /bin/bash
+      loop: "{{ target_env_namespaces }}"
+      register: cronjob_apply_result
+      changed_when: >
+        ('created' in cronjob_apply_result.stdout) or
+        ('configured' in cronjob_apply_result.stdout)
+
+    - name: Show resolved ETL image
+      debug:
+        msg: "ETL image in use: {{ effective_etl_image }}"
+
+    - name: Optionally remove existing bootstrap jobs
+      when: trigger_bootstrap_once and force_trigger_bootstrap
+      command: kubectl -n {{ item }} delete job etl-bootstrap-manual --ignore-not-found
+      loop: "{{ target_env_namespaces }}"
+      changed_when: false
+
+    - name: Check bootstrap job existence
+      when: trigger_bootstrap_once
+      command: kubectl -n {{ item }} get job etl-bootstrap-manual
+      loop: "{{ target_env_namespaces }}"
+      register: bootstrap_job_check
+      failed_when: false
+      changed_when: false
+
+    - name: Trigger one bootstrap job per namespace (if missing)
+      when: trigger_bootstrap_once and (bootstrap_job_check.results[ansible_loop.index0].rc != 0)
+      command: kubectl -n {{ item }} create job --from=cronjob/{{ etl_cronjob_name }} etl-bootstrap-manual
+      loop: "{{ target_env_namespaces }}"
+      loop_control:
+        extended: true
+
+    - name: Show ETL CronJob summary
+      command: kubectl -n {{ item }} get cronjob {{ etl_cronjob_name }} -o wide
+      loop: "{{ target_env_namespaces }}"
+      register: cronjob_summary
+      changed_when: false
+
+    - name: Print ETL CronJob summary
+      debug:
+        msg: "{{ cronjob_summary.results | map(attribute='stdout') | list }}"
