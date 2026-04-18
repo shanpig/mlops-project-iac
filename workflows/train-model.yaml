@@ -13,6 +13,15 @@ spec:
     - name: batch-repo-url
       value: https://github.com/lefteriskomvopoulos/gemspot.git
 
+  # Schedule training/build workload on dedicated ML node(s)
+  nodeSelector:
+    workload: ml
+  tolerations:
+  - key: dedicated
+    operator: Equal
+    value: ml
+    effect: NoSchedule
+
   # Compatibility: some clusters ignore seccompProfile/appArmorProfile fields
   podMetadata:
     annotations:

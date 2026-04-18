@@ -1,0 +1,37 @@
+---
+- name: Dedicate node3 for ML training/inference workloads
+  hosts: node1
+  become: yes
+  vars:
+    ml_node_name: node3
+    ml_node_label_key: workload
+    ml_node_label_value: ml
+    ml_node_taint: dedicated=ml:NoSchedule
+
+  tasks:
+    - name: Verify target node exists
+      command: kubectl get node {{ ml_node_name }}
+      changed_when: false
+
+    - name: Label node for ML workloads (idempotent)
+      command: kubectl label node {{ ml_node_name }} {{ ml_node_label_key }}={{ ml_node_label_value }} --overwrite
+      register: label_result
+      changed_when: "'not labeled' not in (label_result.stdout | default(''))"
+
+    - name: Taint node for ML workloads only (idempotent)
+      command: kubectl taint node {{ ml_node_name }} {{ ml_node_taint }} --overwrite
+      register: taint_result
+      changed_when: "'not tainted' not in (taint_result.stdout | default(''))"
+
+    - name: Show node label and taints
+      shell: >
+        kubectl get node {{ ml_node_name }}
+        -o 'jsonpath={.metadata.labels.{{ ml_node_label_key }}},{range .spec.taints[*]}{.key}={.value}:{.effect}{";"}{end}'
+      args:
+        executable: /bin/bash
+      changed_when: false
+      register: node_state
+
+    - name: Print node dedication state
+      debug:
+        msg: "node={{ ml_node_name }} state={{ node_state.stdout }}"

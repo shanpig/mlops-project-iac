@@ -14,6 +14,14 @@ spec:
       labels:
         app: {{ .Values.mlServing.name }}
     spec:
+      {{- with .Values.mlServing.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mlServing.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: ml-serving
           image: {{ .Values.mlServing.image.repository }}:{{ .Values.mlServing.image.tag }}

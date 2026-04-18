@@ -113,6 +113,13 @@ mlServing:
     MODEL_PATH: /models/gemspot_xgb.json
     REDIS_URL: redis://redis:6379/0
     LOG_LEVEL: INFO
+  nodeSelector:
+    workload: ml
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: ml
+      effect: NoSchedule
   resources:
     requests:
       cpu: "100m"
