@@ -1,0 +1,64 @@
+{{- if .Values.dataGenerator.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.dataGenerator.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  schedule: {{ .Values.dataGenerator.schedule | quote }}
+  suspend: {{ .Values.dataGenerator.suspend }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: data-generator
+              image: {{ .Values.dataGenerator.image.repository }}:{{ .Values.dataGenerator.image.tag }}
+              imagePullPolicy: IfNotPresent
+              command: ["sh", "-c"]
+              args:
+                - |
+                  export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:5432/${PGDATABASE}"
+                  python -m data_generator.main &
+                  GEN_PID=$!
+                  sleep {{ .Values.dataGenerator.runSeconds | quote }}
+                  kill "${GEN_PID}" || true
+                  wait "${GEN_PID}" || true
+              env:
+                - name: PGHOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.dataGenerator.postgresSecret.name | quote }}
+                      key: {{ .Values.dataGenerator.postgresSecret.keys.host | quote }}
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.dataGenerator.postgresSecret.name | quote }}
+                      key: {{ .Values.dataGenerator.postgresSecret.keys.username | quote }}
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.dataGenerator.postgresSecret.name | quote }}
+                      key: {{ .Values.dataGenerator.postgresSecret.keys.password | quote }}
+                - name: PGDATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.dataGenerator.postgresSecret.name | quote }}
+                      key: {{ .Values.dataGenerator.postgresSecret.keys.dbname | quote }}
+                - name: API_BASE_URL
+                  value: {{ .Values.dataGenerator.env.API_BASE_URL | quote }}
+                - name: REDIS_HOST
+                  value: {{ .Values.dataGenerator.env.REDIS_HOST | quote }}
+                - name: REDIS_PORT
+                  value: {{ .Values.dataGenerator.env.REDIS_PORT | quote }}
+                - name: GENERATOR_JOURNEYS_PER_SEC
+                  value: {{ .Values.dataGenerator.env.GENERATOR_JOURNEYS_PER_SEC | quote }}
+                - name: PAUSED
+                  value: {{ .Values.dataGenerator.env.PAUSED | quote }}
+              resources:
+                {{- toYaml .Values.dataGenerator.resources | nindent 16 }}
+{{- end }}

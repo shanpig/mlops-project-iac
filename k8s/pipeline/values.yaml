@@ -183,6 +183,36 @@ etlJob:
       cpu: "500m"
       memory: "1Gi"
 
+dataGenerator:
+  enabled: true
+  name: data-generator
+  image:
+    repository: registry.kube-system.svc.cluster.local:5000/proj10-gemspot-data-generator
+    tag: latest
+  schedule: "*/30 * * * *"
+  suspend: true
+  runSeconds: "300"
+  postgresSecret:
+    name: postgres-credentials
+    keys:
+      host: host
+      username: username
+      password: password
+      dbname: dbname
+  env:
+    API_BASE_URL: "http://ml-api.proj10-platform.svc.cluster.local:8000"
+    REDIS_HOST: "redis"
+    REDIS_PORT: "6379"
+    GENERATOR_JOURNEYS_PER_SEC: "2.0"
+    PAUSED: "false"
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
 airflow:
   enabled: true
   name: airflow

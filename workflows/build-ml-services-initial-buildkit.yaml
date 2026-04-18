@@ -70,6 +70,12 @@ spec:
             parameters:
             - name: image-tag
               value: "{{steps.resolve-version.outputs.parameters.image-version}}"
+        - name: build-data-generator
+          template: buildkit-data-generator
+          arguments:
+            parameters:
+            - name: image-tag
+              value: "{{steps.resolve-version.outputs.parameters.image-version}}"
       - - name: tag-server-latest
           template: copy-tag
           arguments:
@@ -116,6 +122,16 @@ spec:
             parameters:
             - name: image-name
               value: proj10-gemspot-etl-job
+            - name: src-tag
+              value: "{{steps.resolve-version.outputs.parameters.image-version}}"
+            - name: dst-tag
+              value: latest
+        - name: tag-data-generator-latest
+          template: copy-tag
+          arguments:
+            parameters:
+            - name: image-name
+              value: proj10-gemspot-data-generator
             - name: src-tag
               value: "{{steps.resolve-version.outputs.parameters.image-version}}"
             - name: dst-tag
@@ -414,6 +430,56 @@ spec:
         - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-etl-job:buildcache,mode=max,registry.insecure=true
         - --import-cache
         - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-etl-job:buildcache,registry.insecure=true
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "500m"
+        limits:
+          memory: "3Gi"
+          cpu: "1"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: Unconfined
+        appArmorProfile:
+          type: Unconfined
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/workspace
+      - name: buildkitd
+        mountPath: /home/user/.local/share/buildkit
+
+  - name: buildkit-data-generator
+    retryStrategy:
+      limit: "3"
+      retryPolicy: "Always"
+      backoff:
+        duration: "30s"
+        factor: "2"
+    inputs:
+      parameters:
+      - name: image-tag
+    container:
+      image: moby/buildkit:rootless
+      env:
+      - name: BUILDKITD_FLAGS
+        value: --oci-worker-no-process-sandbox
+      command: [buildctl-daemonless.sh]
+      args:
+        - build
+        - --frontend
+        - dockerfile.v0
+        - --local
+        - context=/mnt/workspace/data/data_generator
+        - --local
+        - dockerfile=/mnt/workspace/data/data_generator
+        - --output
+        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-data-generator:{{inputs.parameters.image-tag}},push=true,registry.insecure=true
+        - --export-cache
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-data-generator:buildcache,mode=max,registry.insecure=true
+        - --import-cache
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-data-generator:buildcache,registry.insecure=true
       resources:
         requests:
           memory: "2Gi"
