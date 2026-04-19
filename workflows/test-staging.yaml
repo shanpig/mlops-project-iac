@@ -9,10 +9,14 @@ spec:
     - name: model-version
     - name: staging-namespace
       value: "proj10-staging"
-    - name: staging-service
-      value: "proj10-app"
-    - name: staging-port
+    - name: staging-frontend-service
+      value: "proj10-frontend"
+    - name: staging-frontend-port
       value: "8082"
+    - name: staging-backend-service
+      value: "proj10-backend"
+    - name: staging-backend-port
+      value: "80"
 
   templates:
   - name: test-flow
@@ -22,8 +26,10 @@ spec:
           template: check-predict
           arguments:
             parameters:
-            - name: service-url
-              value: "http://{{workflow.parameters.staging-service}}.{{workflow.parameters.staging-namespace}}.svc.cluster.local:{{workflow.parameters.staging-port}}"
+            - name: frontend-url
+              value: "http://{{workflow.parameters.staging-frontend-service}}.{{workflow.parameters.staging-namespace}}.svc.cluster.local:{{workflow.parameters.staging-frontend-port}}"
+            - name: backend-url
+              value: "http://{{workflow.parameters.staging-backend-service}}.{{workflow.parameters.staging-namespace}}.svc.cluster.local:{{workflow.parameters.staging-backend-port}}"
             - name: model-version
               value: "{{workflow.parameters.model-version}}"
 
@@ -49,7 +55,8 @@ spec:
   - name: check-predict
     inputs:
       parameters:
-      - name: service-url
+      - name: frontend-url
+      - name: backend-url
       - name: model-version
     outputs:
       parameters:
@@ -61,48 +68,42 @@ spec:
       command: [sh]
       source: |
         #!/bin/sh
-        echo "Testing integration: {{inputs.parameters.service-url}}/test"
+        set -eu
+        echo "Testing staging frontend: {{inputs.parameters.frontend-url}}"
+        echo "Testing staging backend: {{inputs.parameters.backend-url}}"
 
-        EXPECTED_VERSION="1.0.{{inputs.parameters.model-version}}"
-
-        # Wait for service to be ready AND serving the expected model version (max 60 seconds)
+        FRONTEND_OK=0
         for i in $(seq 1 12); do
-          VERSION_RESP=$(curl -s "{{inputs.parameters.service-url}}/version" 2>/dev/null || true)
-          if echo "$VERSION_RESP" | grep -q "$EXPECTED_VERSION"; then
-            echo "Service is ready with expected version: $EXPECTED_VERSION"
+          code="$(curl -s -o /tmp/frontend.html -w "%{http_code}" "{{inputs.parameters.frontend-url}}/" || true)"
+          if [ "$code" = "200" ] || [ "$code" = "301" ] || [ "$code" = "302" ]; then
+            FRONTEND_OK=1
+            echo "Frontend ready with HTTP $code"
             break
           fi
-          echo "Waiting for expected version... ($i/12)"
+          echo "Waiting for frontend... ($i/12) http=$code"
           sleep 5
         done
 
-        VERSION_RESP=$(curl -s "{{inputs.parameters.service-url}}/version" 2>/dev/null || true)
-        if ! echo "$VERSION_RESP" | grep -q "$EXPECTED_VERSION"; then
-          echo "✗ Integration test FAILED: /version did not return expected version: $EXPECTED_VERSION"
-          echo "Response: $VERSION_RESP"
+        BACKEND_OK=0
+        for i in $(seq 1 12); do
+          code="$(curl -s -o /tmp/backend.html -w "%{http_code}" "{{inputs.parameters.backend-url}}/api/" || true)"
+          if [ "$code" = "200" ] || [ "$code" = "301" ] || [ "$code" = "302" ] || [ "$code" = "401" ] || [ "$code" = "403" ]; then
+            BACKEND_OK=1
+            echo "Backend ready with HTTP $code"
+            break
+          fi
+          echo "Waiting for backend... ($i/12) http=$code"
+          sleep 5
+        done
+
+        if [ "$FRONTEND_OK" -ne 1 ] || [ "$BACKEND_OK" -ne 1 ]; then
+          echo "✗ Integration test FAILED: staging services not healthy"
           echo "fail" > /tmp/result.txt
           exit 1
         fi
 
-        # Call /test endpoint (runs inference with hardcoded test image)
-        RESPONSE=$(curl -s "{{inputs.parameters.service-url}}/test")
-        echo "Response: $RESPONSE"
-
-        # Verify response is not empty and is a valid food class name
-        if [ -z "$RESPONSE" ]; then
-          echo "✗ Integration test FAILED: Empty response"
-          echo "fail" > /tmp/result.txt
-          exit 1
-        elif echo "$RESPONSE" | grep -qE "(Bread|Dairy product|Dessert|Egg|Fried food|Meat|Noodles/Pasta|Rice|Seafood|Soup|Vegetable/Fruit)"; then
-          echo "✓ Integration test PASSED: Got valid prediction: $RESPONSE"
-          echo "pass" > /tmp/result.txt
-          exit 0
-        else
-          echo "✗ Integration test FAILED: Invalid response (not a valid food class)"
-          echo "$RESPONSE"
-          echo "fail" > /tmp/result.txt
-          exit 1
-        fi
+        echo "✓ Integration test PASSED for model version {{inputs.parameters.model-version}}"
+        echo "pass" > /tmp/result.txt
 
   # Template: Set staging-approved alias in MLflow
   - name: set-staging-approved

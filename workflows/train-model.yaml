@@ -75,6 +75,17 @@ spec:
       # Step 3: Run training
       - - name: run-training
           template: run-training
+      # Step 4: Register newly trained model version (if retrain improved)
+      - - name: register-model-version
+          template: register-model-version
+      # Step 5: Build/deploy/test only when a new model version was registered
+      - - name: build-deploy-and-test
+          template: trigger-build-container-image
+          arguments:
+            parameters:
+            - name: model-version
+              value: "{{steps.register-model-version.outputs.parameters.model-version}}"
+          when: "'{{steps.register-model-version.outputs.parameters.model-version}}' != ''"
 
   # Template: Clone repo and check if rebuild is needed by comparing git commit to image label
   - name: check-and-clone
@@ -340,3 +351,75 @@ spec:
       volumeMounts:
       - name: workdir
         mountPath: /mnt/workspace
+
+  - name: register-model-version
+    outputs:
+      parameters:
+      - name: model-version
+        valueFrom:
+          path: /tmp/model-version.txt
+    script:
+      image: python:3.11-slim
+      command: [sh, -c]
+      source: |
+        set -eu
+        pip install --no-cache-dir mlflow-skinny==3.9.0 > /dev/null
+        export MLFLOW_TRACKING_URI=http://mlflow.proj10-platform.svc.cluster.local:8000
+
+        python - <<'PY'
+        from pathlib import Path
+        import mlflow
+        from mlflow.tracking import MlflowClient
+
+        out = Path("/tmp/model-version.txt")
+        out.write_text("", encoding="utf-8")
+
+        client = MlflowClient()
+        exp = client.get_experiment_by_name("GemSpot-Retrain")
+        if exp is None:
+            print("GemSpot-Retrain experiment not found; skipping downstream flow.")
+            raise SystemExit(0)
+
+        runs = client.search_runs(
+            experiment_ids=[exp.experiment_id],
+            order_by=["start_time DESC"],
+            max_results=1,
+        )
+        if not runs:
+            print("No retrain runs found; skipping downstream flow.")
+            raise SystemExit(0)
+
+        run = runs[0]
+        improved = float(run.data.metrics.get("decision.improved", 0.0) or 0.0)
+        if improved < 0.5:
+            print("Latest retrain run did not improve; no model registration.")
+            raise SystemExit(0)
+
+        mv = mlflow.register_model(
+            model_uri=f"runs:/{run.info.run_id}/model",
+            name="proj10AdventureLogModel",
+        )
+        version = str(mv.version)
+        print(f"Registered new model version: {version}")
+        out.write_text(version, encoding="utf-8")
+        PY
+
+  - name: trigger-build-container-image
+    inputs:
+      parameters:
+      - name: model-version
+    resource:
+      action: create
+      manifest: |
+        apiVersion: argoproj.io/v1alpha1
+        kind: Workflow
+        metadata:
+          generateName: build-container-image-
+          namespace: argo
+        spec:
+          workflowTemplateRef:
+            name: build-container-image
+          arguments:
+            parameters:
+            - name: model-version
+              value: "{{inputs.parameters.model-version}}"

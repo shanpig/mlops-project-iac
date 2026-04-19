@@ -39,6 +39,13 @@ spec:
               value: "{{workflow.parameters.model-version}}"
             - name: alias
               value: "{{workflow.parameters.target-environment}}"
+      - - name: promote-to-production
+          template: trigger-next-promotion
+          arguments:
+            parameters:
+            - name: model-version
+              value: "{{workflow.parameters.model-version}}"
+          when: "'{{workflow.parameters.target-environment}}' == 'canary'"
 
   - name: skopeo-retag
     inputs:
@@ -89,5 +96,28 @@ spec:
             parameters:
             - name: environment
               value: "{{inputs.parameters.environment}}"
+            - name: model-version
+              value: "{{inputs.parameters.model-version}}"
+
+  - name: trigger-next-promotion
+    inputs:
+      parameters:
+      - name: model-version
+    resource:
+      action: create
+      manifest: |
+        apiVersion: argoproj.io/v1alpha1
+        kind: Workflow
+        metadata:
+          generateName: promote-model-
+        spec:
+          workflowTemplateRef:
+            name: promote-model
+          arguments:
+            parameters:
+            - name: source-environment
+              value: "canary"
+            - name: target-environment
+              value: "production"
             - name: model-version
               value: "{{inputs.parameters.model-version}}"
