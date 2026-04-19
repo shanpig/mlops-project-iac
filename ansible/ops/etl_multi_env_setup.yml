@@ -11,15 +11,15 @@
     etl_cronjob_name: etl-job
     etl_schedule: "0 3 * * *"
     etl_suspend: true
-    etl_nrows: "1000"
+    etl_nrows: "0"
     run_ml_table_init: true
     # App charts define these in k8s/{staging,canary,production}/values.yaml
     app_postgres_user: adventure
     app_postgres_db: database
-    etl_requests_cpu: "500m"
-    etl_requests_memory: "1Gi"
+    etl_requests_cpu: "1"
+    etl_requests_memory: "3Gi"
     etl_limits_cpu: "2"
-    etl_limits_memory: "4Gi"
+    etl_limits_memory: "8Gi"
     # Leave empty to auto-detect from proj10-platform/etl-job cronjob.
     etl_image: ""
     trigger_bootstrap_once: false
