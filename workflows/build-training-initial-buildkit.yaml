@@ -15,11 +15,11 @@ spec:
 
   # Schedule training image build workload on dedicated ML node(s)
   nodeSelector:
-    workload: ml
+    workload: large
   tolerations:
   - key: dedicated
     operator: Equal
-    value: ml
+    value: large
     effect: NoSchedule
 
   # Compatibility: some clusters ignore seccompProfile/appArmorProfile fields

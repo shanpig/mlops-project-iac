@@ -5,8 +5,8 @@
   vars:
     ml_node_name: node3
     ml_node_label_key: workload
-    ml_node_label_value: ml
-    ml_node_taint: dedicated=ml:NoSchedule
+    ml_node_label_value: large
+    ml_node_taint: dedicated=large:NoSchedule
 
   tasks:
     - name: Verify target node exists

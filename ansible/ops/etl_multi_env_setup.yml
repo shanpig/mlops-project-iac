@@ -20,6 +20,11 @@
     etl_requests_memory: "3Gi"
     etl_limits_cpu: "2"
     etl_limits_memory: "8Gi"
+    etl_node_label_key: workload
+    etl_node_label_value: large
+    etl_taint_key: dedicated
+    etl_taint_value: large
+    etl_taint_effect: NoSchedule
     # Leave empty to auto-detect from proj10-platform/etl-job cronjob.
     etl_image: ""
     trigger_bootstrap_once: false
@@ -114,6 +119,13 @@
               template:
                 spec:
                   restartPolicy: OnFailure
+                  nodeSelector:
+                    {{ etl_node_label_key }}: "{{ etl_node_label_value }}"
+                  tolerations:
+                    - key: "{{ etl_taint_key }}"
+                      operator: Equal
+                      value: "{{ etl_taint_value }}"
+                      effect: "{{ etl_taint_effect }}"
                   containers:
                     - name: etl-job
                       image: {{ effective_etl_image }}

@@ -14,6 +14,14 @@ spec:
       labels:
         app: {{ .Values.streamConsumer.name }}
     spec:
+      {{- with .Values.streamConsumer.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.streamConsumer.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: stream-consumer
           image: {{ .Values.streamConsumer.image.repository }}:{{ .Values.streamConsumer.image.tag }}

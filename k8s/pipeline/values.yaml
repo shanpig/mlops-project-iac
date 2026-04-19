@@ -74,6 +74,13 @@ streamConsumer:
     REDIS_DB: "0"
     ENDPOINT_URL: "http://minio.proj10-platform.svc.cluster.local:9000"
     LOG_LEVEL: "INFO"
+  nodeSelector:
+    workload: large
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: large
+      effect: NoSchedule
   resources:
     requests:
       cpu: "100m"
@@ -114,11 +121,11 @@ mlServing:
     REDIS_URL: redis://redis:6379/0
     LOG_LEVEL: INFO
   nodeSelector:
-    workload: ml
+    workload: large
   tolerations:
     - key: dedicated
       operator: Equal
-      value: ml
+      value: large
       effect: NoSchedule
   resources:
     requests:
@@ -151,6 +158,13 @@ mlApi:
     KAFKA_TOPIC_RATES: "adventurelog.rates"
     REDIS_HOST: "redis"
     REDIS_PORT: "6379"
+  nodeSelector:
+    workload: large
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: large
+      effect: NoSchedule
   resources:
     requests:
       cpu: "100m"
@@ -182,6 +196,13 @@ etlJob:
   env:
     ENDPOINT_URL: "http://minio.proj10-platform.svc.cluster.local:9000"
     ETL_NROWS: "1000"
+  nodeSelector:
+    workload: large
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: large
+      effect: NoSchedule
   resources:
     requests:
       cpu: "100m"
@@ -212,6 +233,13 @@ dataGenerator:
     REDIS_PORT: "6379"
     GENERATOR_JOURNEYS_PER_SEC: "2.0"
     PAUSED: "false"
+  nodeSelector:
+    workload: large
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: large
+      effect: NoSchedule
   resources:
     requests:
       cpu: "50m"

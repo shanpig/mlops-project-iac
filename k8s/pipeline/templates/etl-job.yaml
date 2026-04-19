@@ -15,6 +15,14 @@ spec:
       template:
         spec:
           restartPolicy: OnFailure
+          {{- with .Values.etlJob.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.etlJob.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           containers:
             - name: etl-job
               image: {{ .Values.etlJob.image.repository }}:{{ .Values.etlJob.image.tag }}

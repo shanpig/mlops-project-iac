@@ -15,6 +15,14 @@ spec:
       template:
         spec:
           restartPolicy: Never
+          {{- with .Values.dataGenerator.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.dataGenerator.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           containers:
             - name: data-generator
               image: {{ .Values.dataGenerator.image.repository }}:{{ .Values.dataGenerator.image.tag }}
