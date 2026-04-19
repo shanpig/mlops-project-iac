@@ -75,14 +75,6 @@ spec:
       # Step 3: Run training
       - - name: run-training
           template: run-training
-      # Step 4: Tag model as development in MLflow (latest trained)
-      - - name: tag-model-development
-          template: set-development-alias
-          arguments:
-            parameters:
-            - name: model-version
-              value: "{{steps.run-training.outputs.parameters.modelversion}}"
-          when: "'{{steps.run-training.outputs.parameters.modelversion}}' != ''"
 
   # Template: Clone repo and check if rebuild is needed by comparing git commit to image label
   - name: check-and-clone
@@ -171,7 +163,7 @@ spec:
           COPY . /app
           COPY gemspot/batch_pipeline /gemspot/batch_pipeline
 
-          CMD ["python", "scripts/retrain_pipeline.py"]
+          CMD ["python", "src/retrain.py"]
           EOF
           
           # Get current git commit (short SHA used as immutable image tag)
@@ -310,53 +302,31 @@ spec:
         - registry.kube-system.svc.cluster.local:5000/proj10-training:{{inputs.parameters.git-commit}}
 
   - name: run-training
-    outputs:
-      parameters:
-      - name: modelversion
-        valueFrom:
-          path: /var/run/argo/outputs/parameters/modelversion
     container:
       image: registry.kube-system.svc.cluster.local:5000/proj10-training:latest
       command: [sh, -c]
       args:
         - |
           set -eu
-          mkdir -p /var/run/argo/outputs/parameters
-
-          MODEL_NAME="GemSpotWillVisit"
-
-          get_staging_version() {
-            MODEL_NAME="${MODEL_NAME}" python -c "import os,mlflow; from mlflow.tracking import MlflowClient; mlflow.set_tracking_uri(os.environ['MLFLOW_TRACKING_URI']); c=MlflowClient(); v=c.get_latest_versions(os.environ['MODEL_NAME'], stages=['Staging']); print(v[0].version if v else '')" 2>/dev/null || echo ""
-          }
-
-          BEFORE_VERSION="$(MODEL_NAME="${MODEL_NAME}" get_staging_version)"
-          echo "Staging version before retrain: ${BEFORE_VERSION:-<none>}"
-
-          python scripts/retrain_pipeline.py \
-            --skip-deploy \
+          python src/retrain.py \
+            --config "configs/candidates.yaml" \
+            --candidate "xgboost_v2" \
+            --parquet-path "s3://agent-datalake/iceberg/adventurelog.db/training_data/data/" \
+            --old-model "artifacts/models/xgboost_v2.joblib" \
+            --artifact-dir "artifacts/models" \
+            --backup-dir "artifacts/models/_backup" \
+            --improvement-threshold 0.001 \
+            --primary-metric "roc_auc" \
+            --additional-rounds 300 \
             --tracking-uri "${MLFLOW_TRACKING_URI}" \
-            --minio-endpoint "${ENDPOINT_URL}" \
-            --app-db-url "postgresql://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DBNAME}" \
-            --iceberg-db-url "postgresql+psycopg2://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/iceberg_catalog" \
-            --experiment-name "GemSpot-WillVisit" \
-            --model-name "${MODEL_NAME}" \
-            --data-dir "/tmp/training_sets"
-
-          AFTER_VERSION="$(MODEL_NAME="${MODEL_NAME}" get_staging_version)"
-          echo "Staging version after retrain: ${AFTER_VERSION:-<none>}"
-
-          if [ -n "${AFTER_VERSION}" ] && [ "${AFTER_VERSION}" != "${BEFORE_VERSION}" ]; then
-            echo "${AFTER_VERSION}" > /var/run/argo/outputs/parameters/modelversion
-            echo "New staged model version detected: ${AFTER_VERSION}"
-          else
-            : > /var/run/argo/outputs/parameters/modelversion
-            echo "No newly staged model version detected in this run."
-          fi
+            --experiment-name "GemSpot-Retrain"
       env:
         - name: MLFLOW_TRACKING_URI
           value: "http://mlflow.proj10-platform.svc.cluster.local:8000"
-        - name: ENDPOINT_URL
+        - name: AWS_ENDPOINT_URL
           value: "http://minio.proj10-platform.svc.cluster.local:9000"
+        - name: AWS_REGION
+          value: "us-east-1"
         - name: AWS_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:
@@ -367,43 +337,6 @@ spec:
             secretKeyRef:
               name: minio-credentials
               key: secretkey
-        - name: POSTGRES_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: postgres-credentials
-              key: username
-        - name: POSTGRES_HOST
-          valueFrom:
-            secretKeyRef:
-              name: postgres-credentials
-              key: host
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: postgres-credentials
-              key: password
-        - name: POSTGRES_DBNAME
-          valueFrom:
-            secretKeyRef:
-              name: postgres-credentials
-              key: dbname
       volumeMounts:
       - name: workdir
         mountPath: /mnt/workspace
-
-  - name: set-development-alias
-    inputs:
-      parameters:
-      - name: model-version
-    script:
-      image: python:3.11-slim
-      command: [sh, -c]
-      source: |
-        set -eu
-        export PIP_DISABLE_PIP_VERSION_CHECK=1
-        pip install mlflow-skinny==3.9.0 > /dev/null
-        export MLFLOW_TRACKING_URI=http://mlflow.proj10-platform.svc.cluster.local:8000
-
-        python -c "import mlflow; client = mlflow.tracking.MlflowClient(); client.set_registered_model_alias(name='GemSpotWillVisit', alias='development', version='{{inputs.parameters.model-version}}')"
-
-        echo "Updated MLflow development alias to version {{inputs.parameters.model-version}}"
