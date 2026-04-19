@@ -106,6 +106,13 @@ function render_secrets_from_templates {
         PRODUCTION_DJANGO_ADMIN_EMAIL
     )
 
+    local platform_postgres_host
+    platform_postgres_host="$(get_env PLATFORM_POSTGRES_HOST)"
+    if [ -z "$platform_postgres_host" ] || [ "$platform_postgres_host" = "postgres" ]; then
+        platform_postgres_host="proj10-postgres.proj10-staging.svc.cluster.local"
+        echo "PLATFORM_POSTGRES_HOST is empty or set to 'postgres'. Falling back to ${platform_postgres_host} for secret rendering."
+    fi
+
     for template in "$SECRETS_TEMPLATE_DIR"/*.yaml.template; do
         [ -e "$template" ] || continue
 
@@ -116,7 +123,11 @@ function render_secrets_from_templates {
         for key in "${keys[@]}"; do
             local value
             local escaped
-            value="$(get_env "$key")"
+            if [ "$key" = "PLATFORM_POSTGRES_HOST" ]; then
+                value="$platform_postgres_host"
+            else
+                value="$(get_env "$key")"
+            fi
             escaped="$(escape_sed_replacement "$value")"
             sed -i.bak "s|__${key}__|${escaped}|g" "$output"
         done
