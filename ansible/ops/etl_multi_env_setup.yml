@@ -11,7 +11,7 @@
     etl_cronjob_name: etl-job
     etl_schedule: "0 3 * * *"
     etl_suspend: true
-    etl_nrows: "100000"
+    etl_nrows: "5000"
     run_ml_table_init: true
     # App charts define these in k8s/{staging,canary,production}/values.yaml
     app_postgres_user: adventure
