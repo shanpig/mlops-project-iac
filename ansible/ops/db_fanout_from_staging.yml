@@ -1,0 +1,98 @@
+---
+- name: Clone staging Postgres data into canary/production
+  hosts: node1
+  become: yes
+  vars:
+    source_namespace: proj10-staging
+    target_namespaces:
+      - proj10-canary
+      - proj10-production
+    postgres_pod_label: app=proj10-postgres
+    app_secret_name: proj10-adventurelog-secrets
+    app_secret_password_key: POSTGRES_PASSWORD
+    db_user: adventure
+    db_name: database
+    # Optional: suspend ETL in target envs before cloning to avoid churn.
+    suspend_target_etl: true
+    etl_cronjob_name: etl-job
+
+  tasks:
+    - name: Ensure source and target namespaces exist
+      command: kubectl get namespace {{ item }}
+      loop: "{{ [source_namespace] + target_namespaces }}"
+      changed_when: false
+
+    - name: Optionally suspend ETL cronjobs in target namespaces
+      when: suspend_target_etl
+      command: kubectl -n {{ item }} patch cronjob {{ etl_cronjob_name }} -p '{"spec":{"suspend":true}}'
+      loop: "{{ target_namespaces }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Resolve source Postgres pod
+      command: >
+        kubectl -n {{ source_namespace }} get pod -l {{ postgres_pod_label }}
+        -o jsonpath={.items[0].metadata.name}
+      register: source_pod
+      changed_when: false
+
+    - name: Assert source Postgres pod is available
+      assert:
+        that:
+          - source_pod.stdout | trim | length > 0
+        fail_msg: "Could not find source Postgres pod in {{ source_namespace }}"
+
+    - name: Clone source DB into each target namespace
+      shell: |
+        set -euo pipefail
+        SRC_NS="{{ source_namespace }}"
+        TGT_NS="{{ item }}"
+        SRC_POD="{{ source_pod.stdout | trim }}"
+        DB_USER="{{ db_user }}"
+        DB_NAME="{{ db_name }}"
+
+        TGT_POD="$(kubectl -n "$TGT_NS" get pod -l {{ postgres_pod_label }} -o jsonpath='{.items[0].metadata.name}')"
+        if [ -z "$TGT_POD" ]; then
+          echo "No target Postgres pod found in $TGT_NS" >&2
+          exit 1
+        fi
+
+        SRC_PW="$(kubectl -n "$SRC_NS" get secret {{ app_secret_name }} -o jsonpath='{.data.{{ app_secret_password_key }}}' | base64 -d)"
+        TGT_PW="$(kubectl -n "$TGT_NS" get secret {{ app_secret_name }} -o jsonpath='{.data.{{ app_secret_password_key }}}' | base64 -d)"
+
+        kubectl -n "$SRC_NS" exec "$SRC_POD" -- sh -lc \
+          "PGPASSWORD='$SRC_PW' pg_dump -U '$DB_USER' -d '$DB_NAME' --clean --if-exists --no-owner --no-privileges" \
+        | kubectl -n "$TGT_NS" exec -i "$TGT_POD" -- sh -lc \
+          "PGPASSWORD='$TGT_PW' psql -v ON_ERROR_STOP=1 -U '$DB_USER' -d '$DB_NAME'"
+      args:
+        executable: /bin/bash
+      loop: "{{ target_namespaces }}"
+      changed_when: true
+
+    - name: Verify row counts on source and target namespaces
+      shell: |
+        set -euo pipefail
+        NS="{{ item }}"
+        POD="$(kubectl -n "$NS" get pod -l {{ postgres_pod_label }} -o jsonpath='{.items[0].metadata.name}')"
+        PW="$(kubectl -n "$NS" get secret {{ app_secret_name }} -o jsonpath='{.data.{{ app_secret_password_key }}}' | base64 -d)"
+        kubectl -n "$NS" exec "$POD" -- sh -lc \
+          "PGPASSWORD='$PW' psql -U '{{ db_user }}' -d '{{ db_name }}' -At -c \"\
+          select 'users',count(*) from users union all \
+          select 'locations',count(*) from locations union all \
+          select 'clicks',count(*) from clicks union all \
+          select 'comments',count(*) from comments union all \
+          select 'rates',count(*) from rates union all \
+          select 'vibe_dictionary',count(*) from vibe_dictionary union all \
+          select 'category_dictionary',count(*) from category_dictionary;\""
+      args:
+        executable: /bin/bash
+      loop: "{{ [source_namespace] + target_namespaces }}"
+      register: row_counts
+      changed_when: false
+
+    - name: Show row count verification
+      debug:
+        msg: |
+          {{ item.item }}:
+          {{ item.stdout }}
+      loop: "{{ row_counts.results }}"
