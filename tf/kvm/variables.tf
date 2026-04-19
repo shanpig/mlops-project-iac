@@ -21,5 +21,12 @@ variable "nodes" {
     "node1" = "192.168.1.11"
     "node2" = "192.168.1.12"
     "node3" = "192.168.1.13"
+    "node4" = "192.168.1.14"
   }
+}
+
+variable "node_flavor_id_overrides" {
+  description = "Optional per-node flavor/reservation IDs"
+  type        = map(string)
+  default     = {}
 }

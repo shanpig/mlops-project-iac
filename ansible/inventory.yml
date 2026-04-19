@@ -11,4 +11,6 @@ all:
     node3:
       ansible_host: 192.168.1.13
       ansible_user: cc
-
+    node4:
+      ansible_host: 192.168.1.14
+      ansible_user: cc

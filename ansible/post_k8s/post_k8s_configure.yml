@@ -32,7 +32,7 @@
         msg: "{{ kubectl_output.stdout_lines }}"
 
 - name: Add User to Docker Group
-  hosts: node1,node2,node3
+  hosts: node1,node2,node3,node4
   become: yes
   tasks:
 
@@ -70,7 +70,7 @@
       command: sysctl --system
 
 - name: Avoid using private interface for DNS
-  hosts: node1,node2,node3
+  hosts: node1,node2,node3,node4
   become: yes
   tasks:
     - name: Set DNS for interface ens4

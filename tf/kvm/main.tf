@@ -47,7 +47,7 @@ resource "openstack_compute_instance_v2" "nodes" {
 
   name       = "${each.key}-mlops-${var.suffix}"
   image_name = "CC-Ubuntu24.04"
-  flavor_id  = var.reservation
+  flavor_id  = lookup(var.node_flavor_id_overrides, each.key, var.reservation)
   key_pair   = var.key
 
   network {

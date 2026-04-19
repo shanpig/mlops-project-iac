@@ -24,3 +24,10 @@ Host node3
   IdentityFile ~/.ssh/id_rsa_chameleon
   IdentitiesOnly yes
   ProxyJump chameleon-bastion
+
+Host node4
+  HostName 192.168.1.14
+  User cc
+  IdentityFile ~/.ssh/id_rsa_chameleon
+  IdentitiesOnly yes
+  ProxyJump chameleon-bastion
