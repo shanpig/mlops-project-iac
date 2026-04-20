@@ -114,6 +114,7 @@ monitoring:
 
   prometheus:
     name: prometheus
+    externalIP: "0.0.0.0"
     image:
       repository: prom/prometheus
       tag: latest
@@ -131,6 +132,7 @@ monitoring:
 
   grafana:
     name: grafana
+    externalIP: "0.0.0.0"
     image:
       repository: grafana/grafana
       tag: latest

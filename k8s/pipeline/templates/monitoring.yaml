@@ -137,6 +137,10 @@ metadata:
   name: {{ .Values.monitoring.prometheus.name }}
   namespace: {{ .Values.namespace }}
 spec:
+  {{- if .Values.monitoring.prometheus.externalIP }}
+  externalIPs:
+    - {{ .Values.monitoring.prometheus.externalIP }}
+  {{- end }}
   selector:
     app: {{ .Values.monitoring.prometheus.name }}
   ports:
@@ -213,6 +217,10 @@ metadata:
   name: {{ .Values.monitoring.grafana.name }}
   namespace: {{ .Values.namespace }}
 spec:
+  {{- if .Values.monitoring.grafana.externalIP }}
+  externalIPs:
+    - {{ .Values.monitoring.grafana.externalIP }}
+  {{- end }}
   selector:
     app: {{ .Values.monitoring.grafana.name }}
   ports:
