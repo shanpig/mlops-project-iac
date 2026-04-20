@@ -182,6 +182,8 @@ spec:
           fi
           rm -rf /mnt/workspace/.git /mnt/workspace/* /mnt/workspace/.[!.]* /mnt/workspace/..?* 2>/dev/null || true
           git clone --depth 1 --branch "{{inputs.parameters.app-branch}}" "$REPO_URL" /mnt/workspace
+          # Normalize line endings to LF for shell entrypoints/scripts used by Docker images.
+          find /mnt/workspace -type f -name "*.sh" -exec sed -i 's/\r$//' {} +
           APP_SHA="$(git -C /mnt/workspace rev-parse --short=12 HEAD)"
           echo "$APP_SHA" > /tmp/app-sha.txt
           echo "staging-$APP_SHA" > /tmp/app-tag.txt
