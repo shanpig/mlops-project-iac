@@ -84,6 +84,7 @@ metadata:
   namespace: proj10-production
 spec:
   replicas: {{ .Values.backend.replicaCount }}
+  progressDeadlineSeconds: 900
   selector:
     matchLabels:
       app: proj10-backend

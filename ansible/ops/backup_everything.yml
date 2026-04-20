@@ -83,12 +83,15 @@
         set -euo pipefail
         AK="$(kubectl -n {{ minio_namespace }} get secret {{ minio_secret_name }} -o jsonpath='{.data.{{ minio_access_key_field }}}' | base64 -d)"
         SK="$(kubectl -n {{ minio_namespace }} get secret {{ minio_secret_name }} -o jsonpath='{.data.{{ minio_secret_key_field }}}' | base64 -d)"
-        kubectl -n {{ minio_namespace }} run mc-backup --rm -i --restart=Never --pod-running-timeout=15m --image=bitnami/minio-client:latest --env="AWS_ACCESS_KEY_ID=$AK" --env="AWS_SECRET_ACCESS_KEY=$SK" --command -- sh -lc \
-          'set -euo pipefail;
-           mc alias set m {{ minio_endpoint }} "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" >/dev/null;
-           mc mirror --overwrite m/{{ minio_bucket }} /tmp/{{ minio_bucket }} >/dev/null;
-           tar -C /tmp -czf - {{ minio_bucket }}' \
-          > "{{ backup_dir_effective }}/minio/{{ minio_bucket }}.tgz"
+        MC_BIN="/usr/local/bin/mc"
+        if [ ! -x "$MC_BIN" ]; then
+          curl -fsSL -o "$MC_BIN" https://dl.min.io/client/mc/release/linux-amd64/mc
+          chmod +x "$MC_BIN"
+        fi
+        "$MC_BIN" alias set m {{ minio_endpoint }} "$AK" "$SK" >/dev/null
+        rm -rf "{{ backup_dir_effective }}/minio/{{ minio_bucket }}"
+        "$MC_BIN" mirror --overwrite "m/{{ minio_bucket }}" "{{ backup_dir_effective }}/minio/{{ minio_bucket }}" >/dev/null
+        tar -C "{{ backup_dir_effective }}/minio" -czf "{{ backup_dir_effective }}/minio/{{ minio_bucket }}.tgz" "{{ minio_bucket }}"
       args:
         executable: /bin/bash
       changed_when: true
