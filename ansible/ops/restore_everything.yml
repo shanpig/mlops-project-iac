@@ -1,0 +1,129 @@
+---
+- name: Restore PostgreSQL, MinIO, and selected cluster state from backup volume
+  hosts: node1
+  become: yes
+  vars:
+    backup_root: /mnt/mlops-backup
+    backup_id: ""
+    backup_dir: "{{ backup_root }}/{{ backup_id }}"
+
+    restore_postgres: true
+    restore_minio: true
+    restore_argo_state: false
+    restore_argocd_apps: false
+
+    db_namespaces:
+      - proj10-staging
+      - proj10-canary
+      - proj10-production
+    postgres_pod_label: app=proj10-postgres
+    postgres_secret_name: proj10-adventurelog-secrets
+    postgres_secret_key: POSTGRES_PASSWORD
+    postgres_user: adventure
+    postgres_db: database
+
+    minio_namespace: proj10-platform
+    minio_secret_name: minio-credentials
+    minio_access_key_field: accesskey
+    minio_secret_key_field: secretkey
+    minio_endpoint: http://minio.proj10-platform.svc.cluster.local:9000
+    minio_bucket: agent-datalake
+
+  tasks:
+    - name: Ensure backup_id is provided
+      assert:
+        that:
+          - backup_id | trim | length > 0
+        fail_msg: "Set backup_id, e.g. -e backup_id=20260420-154500"
+
+    - name: Ensure backup directory exists
+      stat:
+        path: "{{ backup_dir }}"
+      register: backup_dir_stat
+
+    - name: Fail if backup directory not found
+      assert:
+        that:
+          - backup_dir_stat.stat.exists
+          - backup_dir_stat.stat.isdir
+        fail_msg: "Backup directory not found: {{ backup_dir }}"
+
+    - name: Restore MinIO bucket from tarball
+      when: restore_minio
+      shell: |
+        set -euo pipefail
+        test -f "{{ backup_dir }}/minio/{{ minio_bucket }}.tgz"
+        AK="$(kubectl -n {{ minio_namespace }} get secret {{ minio_secret_name }} -o jsonpath='{.data.{{ minio_access_key_field }}}' | base64 -d)"
+        SK="$(kubectl -n {{ minio_namespace }} get secret {{ minio_secret_name }} -o jsonpath='{.data.{{ minio_secret_key_field }}}' | base64 -d)"
+        cat "{{ backup_dir }}/minio/{{ minio_bucket }}.tgz" | \
+          kubectl -n {{ minio_namespace }} run mc-restore --rm -i --restart=Never --image=minio/mc --env="AWS_ACCESS_KEY_ID=$AK" --env="AWS_SECRET_ACCESS_KEY=$SK" --command -- sh -lc \
+          'set -euo pipefail;
+           mc alias set m {{ minio_endpoint }} "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" >/dev/null;
+           rm -rf /tmp/{{ minio_bucket }};
+           mkdir -p /tmp;
+           tar -C /tmp -xzf -;
+           mc mirror --overwrite --remove /tmp/{{ minio_bucket }} m/{{ minio_bucket }} >/dev/null'
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Restore PostgreSQL dumps for each environment
+      when: restore_postgres
+      shell: |
+        set -euo pipefail
+        NS="{{ item }}"
+        DUMP="{{ backup_dir }}/postgres/${NS}_database.dump"
+        test -f "$DUMP"
+        POD="$(kubectl -n "$NS" get pod -l {{ postgres_pod_label }} -o jsonpath='{.items[0].metadata.name}')"
+        PW="$(kubectl -n "$NS" get secret {{ postgres_secret_name }} -o jsonpath='{.data.{{ postgres_secret_key }}}' | base64 -d)"
+        cat "$DUMP" | kubectl -n "$NS" exec -i "$POD" -- sh -lc \
+          "PGPASSWORD='$PW' pg_restore -U '{{ postgres_user }}' -d '{{ postgres_db }}' --clean --if-exists --no-owner --no-privileges"
+      args:
+        executable: /bin/bash
+      loop: "{{ db_namespaces }}"
+      changed_when: true
+
+    - name: Reapply Argo workflow state from backup
+      when: restore_argo_state
+      shell: |
+        set -euo pipefail
+        kubectl apply -f "{{ backup_dir }}/argo/workflowtemplates.yaml"
+        kubectl apply -f "{{ backup_dir }}/argo/cronworkflows.yaml"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Reapply ArgoCD Applications from backup
+      when: restore_argocd_apps
+      command: kubectl apply -f {{ backup_dir }}/argocd/applications.yaml
+      changed_when: true
+
+    - name: Verify restored row counts
+      when: restore_postgres
+      shell: |
+        set -euo pipefail
+        NS="{{ item }}"
+        POD="$(kubectl -n "$NS" get pod -l {{ postgres_pod_label }} -o jsonpath='{.items[0].metadata.name}')"
+        PW="$(kubectl -n "$NS" get secret {{ postgres_secret_name }} -o jsonpath='{.data.{{ postgres_secret_key }}}' | base64 -d)"
+        kubectl -n "$NS" exec "$POD" -- sh -lc \
+          "PGPASSWORD='$PW' psql -U '{{ postgres_user }}' -d '{{ postgres_db }}' -At -c \"\
+          select 'users',count(*) from users union all \
+          select 'locations',count(*) from locations union all \
+          select 'clicks',count(*) from clicks union all \
+          select 'comments',count(*) from comments union all \
+          select 'rates',count(*) from rates union all \
+          select 'vibe_dictionary',count(*) from vibe_dictionary union all \
+          select 'category_dictionary',count(*) from category_dictionary;\""
+      args:
+        executable: /bin/bash
+      loop: "{{ db_namespaces }}"
+      register: restored_counts
+      changed_when: false
+
+    - name: Show restored row counts
+      when: restore_postgres
+      debug:
+        msg: |
+          {{ item.item }}:
+          {{ item.stdout }}
+      loop: "{{ restored_counts.results }}"

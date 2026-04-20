@@ -1,0 +1,180 @@
+---
+- name: Backup PostgreSQL, MinIO, and Kubernetes state to persistent volume
+  hosts: node1
+  become: yes
+  vars:
+    backup_root: /mnt/mlops-backup
+    backup_id: ""
+    backup_timestamp_utc: ""
+    local_reference_file: "{{ playbook_dir }}/latest_backup_reference.txt"
+
+    db_namespaces:
+      - proj10-staging
+      - proj10-canary
+      - proj10-production
+    postgres_pod_label: app=proj10-postgres
+    postgres_secret_name: proj10-adventurelog-secrets
+    postgres_secret_key: POSTGRES_PASSWORD
+    postgres_user: adventure
+    postgres_db: database
+
+    minio_namespace: proj10-platform
+    minio_secret_name: minio-credentials
+    minio_access_key_field: accesskey
+    minio_secret_key_field: secretkey
+    minio_endpoint: http://minio.proj10-platform.svc.cluster.local:9000
+    minio_bucket: agent-datalake
+
+    backup_minio: true
+    backup_postgres: true
+    backup_cluster_state: true
+
+  tasks:
+    - name: Freeze backup identifiers for this run
+      set_fact:
+        backup_id_effective: >-
+          {{
+            (backup_id | default('', true) | trim | length > 0)
+            | ternary(backup_id | trim, lookup('pipe', 'date +%Y%m%d-%H%M%S'))
+          }}
+        backup_timestamp_utc_effective: >-
+          {{
+            (backup_timestamp_utc | default('', true) | trim | length > 0)
+            | ternary(backup_timestamp_utc | trim, lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ'))
+          }}
+
+    - name: Compute backup directory from frozen identifier
+      set_fact:
+        backup_dir_effective: "{{ backup_root }}/{{ backup_id_effective }}"
+
+    - name: Ensure backup directory tree exists
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ backup_dir_effective }}"
+        - "{{ backup_dir_effective }}/postgres"
+        - "{{ backup_dir_effective }}/minio"
+        - "{{ backup_dir_effective }}/k8s"
+        - "{{ backup_dir_effective }}/argo"
+        - "{{ backup_dir_effective }}/argocd"
+        - "{{ backup_dir_effective }}/infra"
+        - "{{ backup_dir_effective }}/meta"
+
+    - name: Backup PostgreSQL dumps for each environment
+      when: backup_postgres
+      shell: |
+        set -euo pipefail
+        NS="{{ item }}"
+        POD="$(kubectl -n "$NS" get pod -l {{ postgres_pod_label }} -o jsonpath='{.items[0].metadata.name}')"
+        PW="$(kubectl -n "$NS" get secret {{ postgres_secret_name }} -o jsonpath='{.data.{{ postgres_secret_key }}}' | base64 -d)"
+        kubectl -n "$NS" exec "$POD" -- sh -lc \
+          "PGPASSWORD='$PW' pg_dump -U '{{ postgres_user }}' -d '{{ postgres_db }}' -Fc" \
+          > "{{ backup_dir_effective }}/postgres/${NS}_database.dump"
+      args:
+        executable: /bin/bash
+      loop: "{{ db_namespaces }}"
+      changed_when: true
+
+    - name: Backup MinIO bucket to tarball
+      when: backup_minio
+      shell: |
+        set -euo pipefail
+        AK="$(kubectl -n {{ minio_namespace }} get secret {{ minio_secret_name }} -o jsonpath='{.data.{{ minio_access_key_field }}}' | base64 -d)"
+        SK="$(kubectl -n {{ minio_namespace }} get secret {{ minio_secret_name }} -o jsonpath='{.data.{{ minio_secret_key_field }}}' | base64 -d)"
+        kubectl -n {{ minio_namespace }} run mc-backup --rm -i --restart=Never --image=minio/mc --env="AWS_ACCESS_KEY_ID=$AK" --env="AWS_SECRET_ACCESS_KEY=$SK" --command -- sh -lc \
+          'set -euo pipefail;
+           mc alias set m {{ minio_endpoint }} "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" >/dev/null;
+           mc mirror --overwrite m/{{ minio_bucket }} /tmp/{{ minio_bucket }} >/dev/null;
+           tar -C /tmp -czf - {{ minio_bucket }}' \
+          > "{{ backup_dir_effective }}/minio/{{ minio_bucket }}.tgz"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Backup workflow and application state
+      when: backup_cluster_state
+      shell: |
+        set -euo pipefail
+        kubectl get workflowtemplates.argoproj.io -n argo -o yaml > "{{ backup_dir_effective }}/argo/workflowtemplates.yaml"
+        kubectl get cronworkflows.argoproj.io -n argo -o yaml > "{{ backup_dir_effective }}/argo/cronworkflows.yaml"
+        kubectl get workflows.argoproj.io -n argo -o yaml > "{{ backup_dir_effective }}/argo/workflows.yaml"
+        kubectl get applications.argoproj.io -n argocd -o yaml > "{{ backup_dir_effective }}/argocd/applications.yaml"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Backup namespace manifests
+      when: backup_cluster_state
+      shell: |
+        set -euo pipefail
+        for ns in proj10-platform proj10-staging proj10-canary proj10-production; do
+          kubectl get all,cm,secret,pvc,sa,role,rolebinding,ingress,httproute,gateway -n "$ns" -o yaml > "{{ backup_dir_effective }}/k8s/${ns}.yaml"
+        done
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Backup cluster infra snapshot
+      when: backup_cluster_state
+      shell: |
+        set -euo pipefail
+        kubectl get nodes -o wide > "{{ backup_dir_effective }}/infra/nodes.txt"
+        kubectl get nodes -o json > "{{ backup_dir_effective }}/infra/nodes.json"
+        kubectl get sc,pv,pvc -A -o yaml > "{{ backup_dir_effective }}/infra/storage.yaml"
+        kubectl get ns -o yaml > "{{ backup_dir_effective }}/infra/namespaces.yaml"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Export MLflow model versions
+      shell: |
+        set -euo pipefail
+        kubectl -n proj10-platform run mlflow-alias-export --rm -i --restart=Never --image=python:3.11-slim -- sh -lc \
+          'pip install -q mlflow-skinny==3.9.0 && python -c "import json,mlflow; c=mlflow.tracking.MlflowClient(tracking_uri=\"http://mlflow.proj10-platform.svc.cluster.local:8000\"); name=\"proj10AdventureLogModel\"; vers=[mv.version for mv in c.search_model_versions(\"name='\''\"+name+\"'\''\")]; print(json.dumps({\"model\":name,\"versions\":vers}))"' \
+          > "{{ backup_dir_effective }}/meta/mlflow_versions.json"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Write restore checklist
+      copy:
+        dest: "{{ backup_dir_effective }}/RESTORE.md"
+        mode: "0644"
+        content: |
+          1. Recreate cluster and join nodes.
+          2. Attach and mount persistent backup volume.
+          3. Restore MinIO tarball and PostgreSQL dumps.
+          4. Reapply Argo workflow templates and ArgoCD applications.
+          5. Reapply sealed secrets or vault-driven secret generation.
+          6. Trigger smoke tests and train/test/promote pipeline.
+
+    - name: Show backup location
+      debug:
+        msg:
+          - "Backup completed: {{ backup_dir_effective }}"
+          - "Postgres dumps: {{ backup_dir_effective }}/postgres"
+          - "MinIO tarball: {{ backup_dir_effective }}/minio/{{ minio_bucket }}.tgz"
+
+    - name: Write backup reference file inside backup directory
+      copy:
+        dest: "{{ backup_dir_effective }}/BACKUP_REFERENCE.txt"
+        mode: "0644"
+        content: |
+          backup_id={{ backup_id_effective }}
+          backup_timestamp_utc={{ backup_timestamp_utc_effective }}
+          backup_dir={{ backup_dir_effective }}
+          backup_root={{ backup_root }}
+
+    - name: Write latest backup reference file in iac repo
+      delegate_to: localhost
+      become: no
+      copy:
+        dest: "{{ local_reference_file }}"
+        mode: "0644"
+        content: |
+          backup_id={{ backup_id_effective }}
+          backup_timestamp_utc={{ backup_timestamp_utc_effective }}
+          backup_dir={{ backup_dir_effective }}
+          generated_by=ansible/ops/backup_everything.yml
