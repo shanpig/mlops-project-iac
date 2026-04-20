@@ -139,7 +139,10 @@ spec:
             parameters:
             - name: model-version
               value: "{{workflow.parameters.model-version}}"
-          when: "'{{steps.integration-test.outputs.parameters.result}}' == 'pass'"
+          when: >-
+            '{{steps.integration-test.outputs.parameters.result}}' == 'pass' &&
+            ('{{steps.resolve-drift.outputs.parameters.app-changed}}' == 'true' ||
+             '{{steps.resolve-drift.outputs.parameters.model-changed}}' == 'true')
 
   - name: checkout-app
     inputs:
