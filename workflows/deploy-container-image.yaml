@@ -30,7 +30,11 @@ spec:
             --insecure
 
           argocd app set "$app_name" \
-            --helm-set-string mlServing.image.tag=$tag
+            --helm-set-string mlServing.image.tag=$tag \
+            --helm-set-string mlServing.env.MODEL_PATH=/models/gemspot_xgb.joblib \
+            --helm-set-string mlServing.env.MLFLOW_URL=http://mlflow.proj10-platform.svc.cluster.local:8000 \
+            --helm-set-string mlServing.env.MLFLOW_MODEL_NAME=proj10AdventureLogModel \
+            --helm-set-string mlServing.env.MLFLOW_MODEL_ALIAS={{inputs.parameters.environment}}
           argocd app sync "$app_name"
       env:
         - name: ARGOCD_PASSWORD

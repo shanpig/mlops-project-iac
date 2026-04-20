@@ -90,7 +90,7 @@ spec:
         - --no-tags
         - --single-branch
         - --branch
-        - workflow
+        - main
         - https://github.com/lefteriskomvopoulos/GemSpotApp.git
         - .
       volumeMounts:
@@ -121,12 +121,9 @@ spec:
           pip install mlflow-skinny==3.9.0 > /dev/null
           export MLFLOW_TRACKING_URI=http://mlflow.proj10-platform.svc.cluster.local:8000
           export MODEL_VERSION='{{inputs.parameters.model-version}}'
-          mkdir -p /tmp/mlflow_model
-
           python - <<'PY'
           import os
           import sys
-          import mlflow
           from mlflow.tracking import MlflowClient
 
           NAME = "proj10AdventureLogModel"
@@ -137,19 +134,7 @@ spec:
 
           print(f"Model version: {VERSION}", file=sys.stderr)
           print(f"Model source: {mv.source}", file=sys.stderr)
-
-          # Download the model artifact directly using the source URI
-          # Source is like: runs:/{run_id}/model/food11.pth
-          downloaded_path = mlflow.artifacts.download_artifacts(
-              artifact_uri=mv.source,
-              dst_path="/mnt/workspace"
-          )
-          
-          print(f"Downloaded model to: {downloaded_path}", file=sys.stderr)
-
-          # Write version file
-          with open("/mnt/workspace/versions.txt", "w", encoding="utf-8") as f:
-              f.write(f"1.0.{VERSION}\n")
+          print(f"Validated registered model version exists: {VERSION}", file=sys.stderr)
           PY
       volumeMounts:
       - name: workdir
@@ -186,9 +171,9 @@ spec:
         - --frontend
         - dockerfile.v0
         - --local
-        - context=/mnt/workspace
+        - context=/mnt/workspace/ml-serving
         - --local
-        - dockerfile=/mnt/workspace
+        - dockerfile=/mnt/workspace/ml-serving
         - --output
         - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-serving:staging-1.0.{{inputs.parameters.model-version}},push=true,registry.insecure=true
         - --export-cache

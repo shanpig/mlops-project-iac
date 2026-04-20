@@ -343,7 +343,11 @@ spec:
             --insecure
 
           argocd app set proj10-pipeline \
-            --helm-set-string mlServing.image.tag={{inputs.parameters.model-tag}}
+            --helm-set-string mlServing.image.tag={{inputs.parameters.model-tag}} \
+            --helm-set-string mlServing.env.MODEL_PATH=/models/gemspot_xgb.joblib \
+            --helm-set-string mlServing.env.MLFLOW_URL=http://mlflow.proj10-platform.svc.cluster.local:8000 \
+            --helm-set-string mlServing.env.MLFLOW_MODEL_NAME=proj10AdventureLogModel \
+            --helm-set-string mlServing.env.MLFLOW_MODEL_ALIAS=staging
           argocd app sync proj10-pipeline
           argocd app wait proj10-pipeline --health --sync --timeout 600
       env:

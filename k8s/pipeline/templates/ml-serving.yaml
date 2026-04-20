@@ -31,6 +31,12 @@ spec:
               value: {{ .Values.mlServing.env.MODEL_PATH | quote }}
             - name: REDIS_URL
               value: {{ .Values.mlServing.env.REDIS_URL | quote }}
+            - name: MLFLOW_URL
+              value: {{ .Values.mlServing.env.MLFLOW_URL | quote }}
+            - name: MLFLOW_MODEL_NAME
+              value: {{ .Values.mlServing.env.MLFLOW_MODEL_NAME | quote }}
+            - name: MLFLOW_MODEL_ALIAS
+              value: {{ .Values.mlServing.env.MLFLOW_MODEL_ALIAS | quote }}
             - name: LOG_LEVEL
               value: {{ .Values.mlServing.env.LOG_LEVEL | quote }}
           ports:

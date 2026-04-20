@@ -117,8 +117,11 @@ mlServing:
   service:
     port: 8000
   env:
-    MODEL_PATH: /models/gemspot_xgb.json
+    MODEL_PATH: /models/gemspot_xgb.joblib
     REDIS_URL: redis://redis:6379/0
+    MLFLOW_URL: http://mlflow.proj10-platform.svc.cluster.local:8000
+    MLFLOW_MODEL_NAME: proj10AdventureLogModel
+    MLFLOW_MODEL_ALIAS: staging
     LOG_LEVEL: INFO
   nodeSelector:
     workload: large
