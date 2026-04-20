@@ -79,20 +79,29 @@ spec:
       image: alpine/git:v2.26.2
       workingDir: /mnt/workspace
       env:
+      - name: GITHUB_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: github-repo-auth
+            key: username
+            optional: true
+      - name: GITHUB_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: github-repo-auth
+            key: token
+            optional: true
       - name: GIT_TERMINAL_PROMPT
         value: "0"
-      command: [git]
+      command: [sh, -c]
       args:
-        - clone
-        - --depth
-        - "1"
-        - --filter=blob:none
-        - --no-tags
-        - --single-branch
-        - --branch
-        - main
-        - https://github.com/lefteriskomvopoulos/GemSpotApp.git
-        - .
+        - |
+          set -eu
+          REPO_URL="https://github.com/lefteriskomvopoulos/GemSpotApp.git"
+          if [ -n "${GITHUB_USERNAME:-}" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
+            REPO_URL=$(echo "$REPO_URL" | sed "s#https://github.com/#https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/#")
+          fi
+          git clone --depth 1 --filter=blob:none --no-tags --single-branch --branch main "$REPO_URL" .
       volumeMounts:
       - name: workdir
         mountPath: /mnt/workspace
