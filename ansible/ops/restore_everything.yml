@@ -11,6 +11,7 @@
     restore_minio: true
     restore_argo_state: false
     restore_argocd_apps: false
+    restore_github_auth: true
 
     db_namespaces:
       - proj10-staging
@@ -28,6 +29,11 @@
     minio_secret_key_field: secretkey
     minio_endpoint: http://minio.proj10-platform.svc.cluster.local:9000
     minio_bucket: agent-datalake
+
+    github_auth_secret_name: github-repo-auth
+    github_auth_namespaces:
+      - argo
+      - argocd
 
   tasks:
     - name: Ensure backup_id is provided
@@ -96,6 +102,23 @@
     - name: Reapply ArgoCD Applications from backup
       when: restore_argocd_apps
       command: kubectl apply -f {{ backup_dir }}/argocd/applications.yaml
+      changed_when: true
+
+    - name: Restore GitHub auth secret manifests
+      when: restore_github_auth
+      shell: |
+        set -euo pipefail
+        NS="{{ item }}"
+        FILE="{{ backup_dir }}/${NS}/{{ github_auth_secret_name }}.yaml"
+        if test -f "$FILE"; then
+          kubectl apply -f "$FILE"
+          echo "Restored $FILE"
+        else
+          echo "No backup manifest found for $NS/{{ github_auth_secret_name }}, skipping"
+        fi
+      args:
+        executable: /bin/bash
+      loop: "{{ github_auth_namespaces }}"
       changed_when: true
 
     - name: Verify restored row counts

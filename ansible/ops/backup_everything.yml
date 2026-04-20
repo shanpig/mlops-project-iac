@@ -28,6 +28,12 @@
     backup_minio: true
     backup_postgres: true
     backup_cluster_state: true
+    backup_github_auth: true
+
+    github_auth_secret_name: github-repo-auth
+    github_auth_namespaces:
+      - argo
+      - argocd
 
   tasks:
     - name: Freeze backup identifiers for this run
@@ -108,6 +114,31 @@
         executable: /bin/bash
       changed_when: true
 
+    - name: Backup GitHub auth secret manifests (sanitized)
+      when: backup_github_auth
+      shell: |
+        set -euo pipefail
+        NS="{{ item }}"
+        OUT="{{ backup_dir_effective }}/${NS}/{{ github_auth_secret_name }}.yaml"
+        if kubectl -n "$NS" get secret "{{ github_auth_secret_name }}" >/dev/null 2>&1; then
+          kubectl -n "$NS" get secret "{{ github_auth_secret_name }}" -o json | \
+            jq 'del(
+              .metadata.creationTimestamp,
+              .metadata.resourceVersion,
+              .metadata.uid,
+              .metadata.managedFields,
+              .metadata.annotations."kubectl.kubernetes.io/last-applied-configuration"
+            )' | \
+            kubectl apply --dry-run=client -f - -o yaml > "$OUT"
+          echo "Backed up $NS/{{ github_auth_secret_name }} -> $OUT"
+        else
+          echo "Secret $NS/{{ github_auth_secret_name }} not found, skipping"
+        fi
+      args:
+        executable: /bin/bash
+      loop: "{{ github_auth_namespaces }}"
+      changed_when: true
+
     - name: Backup namespace manifests
       when: backup_cluster_state
       shell: |
@@ -149,9 +180,10 @@
           1. Recreate cluster and join nodes.
           2. Attach and mount persistent backup volume.
           3. Restore MinIO tarball and PostgreSQL dumps.
-          4. Reapply Argo workflow templates and ArgoCD applications.
-          5. Reapply sealed secrets or vault-driven secret generation.
-          6. Trigger smoke tests and train/test/promote pipeline.
+          4. Restore GitHub auth secret(s) used by workflow clones.
+          5. Reapply Argo workflow templates and ArgoCD applications.
+          6. Reapply sealed secrets or vault-driven secret generation.
+          7. Trigger smoke tests and train/test/promote pipeline.
 
     - name: Show backup location
       debug:
