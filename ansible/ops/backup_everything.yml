@@ -23,12 +23,23 @@
     minio_access_key_field: accesskey
     minio_secret_key_field: secretkey
     minio_endpoint: http://minio.proj10-platform.svc.cluster.local:9000
-    minio_bucket: agent-datalake
+    minio_buckets:
+      - agent-datalake
+      - mlflow-artifacts
 
     backup_minio: true
     backup_postgres: true
     backup_cluster_state: true
     backup_github_auth: true
+    backup_mlflow_postgres: true
+
+    mlflow_postgres_namespace: proj10-platform
+    mlflow_postgres_secret_name: postgres-credentials
+    mlflow_postgres_host_field: host
+    mlflow_postgres_user_field: username
+    mlflow_postgres_password_field: password
+    mlflow_postgres_db_field: dbname
+    mlflow_postgres_port: "5432"
 
     github_auth_secret_name: github-repo-auth
     github_auth_namespaces:
@@ -83,10 +94,11 @@
       loop: "{{ db_namespaces }}"
       changed_when: true
 
-    - name: Backup MinIO bucket to tarball
+    - name: Backup MinIO bucket(s) to tarball
       when: backup_minio
       shell: |
         set -euo pipefail
+        BUCKET="{{ item }}"
         AK="$(kubectl -n {{ minio_namespace }} get secret {{ minio_secret_name }} -o jsonpath='{.data.{{ minio_access_key_field }}}' | base64 -d)"
         SK="$(kubectl -n {{ minio_namespace }} get secret {{ minio_secret_name }} -o jsonpath='{.data.{{ minio_secret_key_field }}}' | base64 -d)"
         MC_BIN="/usr/local/bin/mc"
@@ -95,9 +107,27 @@
           chmod +x "$MC_BIN"
         fi
         "$MC_BIN" alias set m {{ minio_endpoint }} "$AK" "$SK" >/dev/null
-        rm -rf "{{ backup_dir_effective }}/minio/{{ minio_bucket }}"
-        "$MC_BIN" mirror --overwrite "m/{{ minio_bucket }}" "{{ backup_dir_effective }}/minio/{{ minio_bucket }}" >/dev/null
-        tar -C "{{ backup_dir_effective }}/minio" -czf "{{ backup_dir_effective }}/minio/{{ minio_bucket }}.tgz" "{{ minio_bucket }}"
+        rm -rf "{{ backup_dir_effective }}/minio/${BUCKET}"
+        "$MC_BIN" mirror --overwrite "m/${BUCKET}" "{{ backup_dir_effective }}/minio/${BUCKET}" >/dev/null
+        tar -C "{{ backup_dir_effective }}/minio" -czf "{{ backup_dir_effective }}/minio/${BUCKET}.tgz" "${BUCKET}"
+      args:
+        executable: /bin/bash
+      loop: "{{ minio_buckets }}"
+      changed_when: true
+
+    - name: Backup MLflow backend PostgreSQL dump
+      when: backup_mlflow_postgres
+      shell: |
+        set -euo pipefail
+        NS="{{ mlflow_postgres_namespace }}"
+        PGHOST="$(kubectl -n "$NS" get secret {{ mlflow_postgres_secret_name }} -o jsonpath='{.data.{{ mlflow_postgres_host_field }}}' | base64 -d)"
+        PGUSER="$(kubectl -n "$NS" get secret {{ mlflow_postgres_secret_name }} -o jsonpath='{.data.{{ mlflow_postgres_user_field }}}' | base64 -d)"
+        PGPASSWORD="$(kubectl -n "$NS" get secret {{ mlflow_postgres_secret_name }} -o jsonpath='{.data.{{ mlflow_postgres_password_field }}}' | base64 -d)"
+        PGDATABASE="$(kubectl -n "$NS" get secret {{ mlflow_postgres_secret_name }} -o jsonpath='{.data.{{ mlflow_postgres_db_field }}}' | base64 -d)"
+
+        kubectl -n "$NS" run mlflow-pgdump --rm -i --restart=Never --image=postgres:15 --env="PGHOST=$PGHOST" --env="PGPORT={{ mlflow_postgres_port }}" --env="PGUSER=$PGUSER" --env="PGPASSWORD=$PGPASSWORD" --env="PGDATABASE=$PGDATABASE" --command -- sh -lc \
+          'set -euo pipefail; pg_dump -Fc' \
+          > "{{ backup_dir_effective }}/postgres/mlflow_backend.dump"
       args:
         executable: /bin/bash
       changed_when: true
@@ -190,7 +220,7 @@
         msg:
           - "Backup completed: {{ backup_dir_effective }}"
           - "Postgres dumps: {{ backup_dir_effective }}/postgres"
-          - "MinIO tarball: {{ backup_dir_effective }}/minio/{{ minio_bucket }}.tgz"
+          - "MinIO tarballs: {{ backup_dir_effective }}/minio/{agent-datalake.tgz,mlflow-artifacts.tgz}"
 
     - name: Write backup reference file inside backup directory
       copy:

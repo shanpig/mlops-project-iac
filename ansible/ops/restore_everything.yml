@@ -12,6 +12,7 @@
     restore_argo_state: false
     restore_argocd_apps: false
     restore_github_auth: true
+    restore_mlflow_postgres: true
 
     db_namespaces:
       - proj10-staging
@@ -28,7 +29,17 @@
     minio_access_key_field: accesskey
     minio_secret_key_field: secretkey
     minio_endpoint: http://minio.proj10-platform.svc.cluster.local:9000
-    minio_bucket: agent-datalake
+    minio_buckets:
+      - agent-datalake
+      - mlflow-artifacts
+
+    mlflow_postgres_namespace: proj10-platform
+    mlflow_postgres_secret_name: postgres-credentials
+    mlflow_postgres_host_field: host
+    mlflow_postgres_user_field: username
+    mlflow_postgres_password_field: password
+    mlflow_postgres_db_field: dbname
+    mlflow_postgres_port: "5432"
 
     github_auth_secret_name: github-repo-auth
     github_auth_namespaces:
@@ -54,23 +65,25 @@
           - backup_dir_stat.stat.isdir
         fail_msg: "Backup directory not found: {{ backup_dir }}"
 
-    - name: Restore MinIO bucket from tarball
+    - name: Restore MinIO bucket(s) from tarball
       when: restore_minio
       shell: |
         set -euo pipefail
-        test -f "{{ backup_dir }}/minio/{{ minio_bucket }}.tgz"
+        BUCKET="{{ item }}"
+        test -f "{{ backup_dir }}/minio/${BUCKET}.tgz"
         AK="$(kubectl -n {{ minio_namespace }} get secret {{ minio_secret_name }} -o jsonpath='{.data.{{ minio_access_key_field }}}' | base64 -d)"
         SK="$(kubectl -n {{ minio_namespace }} get secret {{ minio_secret_name }} -o jsonpath='{.data.{{ minio_secret_key_field }}}' | base64 -d)"
-        cat "{{ backup_dir }}/minio/{{ minio_bucket }}.tgz" | \
+        cat "{{ backup_dir }}/minio/${BUCKET}.tgz" | \
           kubectl -n {{ minio_namespace }} run mc-restore --rm -i --restart=Never --image=minio/mc --env="AWS_ACCESS_KEY_ID=$AK" --env="AWS_SECRET_ACCESS_KEY=$SK" --command -- sh -lc \
           'set -euo pipefail;
            mc alias set m {{ minio_endpoint }} "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" >/dev/null;
-           rm -rf /tmp/{{ minio_bucket }};
+           rm -rf /tmp/'"${BUCKET}"';
            mkdir -p /tmp;
            tar -C /tmp -xzf -;
-           mc mirror --overwrite --remove /tmp/{{ minio_bucket }} m/{{ minio_bucket }} >/dev/null'
+           mc mirror --overwrite --remove /tmp/'"${BUCKET}"' m/'"${BUCKET}"' >/dev/null'
       args:
         executable: /bin/bash
+      loop: "{{ minio_buckets }}"
       changed_when: true
 
     - name: Restore PostgreSQL dumps for each environment
@@ -119,6 +132,25 @@
       args:
         executable: /bin/bash
       loop: "{{ github_auth_namespaces }}"
+      changed_when: true
+
+    - name: Restore MLflow backend PostgreSQL dump
+      when: restore_mlflow_postgres
+      shell: |
+        set -euo pipefail
+        DUMP="{{ backup_dir }}/postgres/mlflow_backend.dump"
+        test -f "$DUMP"
+
+        NS="{{ mlflow_postgres_namespace }}"
+        PGHOST="$(kubectl -n "$NS" get secret {{ mlflow_postgres_secret_name }} -o jsonpath='{.data.{{ mlflow_postgres_host_field }}}' | base64 -d)"
+        PGUSER="$(kubectl -n "$NS" get secret {{ mlflow_postgres_secret_name }} -o jsonpath='{.data.{{ mlflow_postgres_user_field }}}' | base64 -d)"
+        PGPASSWORD="$(kubectl -n "$NS" get secret {{ mlflow_postgres_secret_name }} -o jsonpath='{.data.{{ mlflow_postgres_password_field }}}' | base64 -d)"
+        PGDATABASE="$(kubectl -n "$NS" get secret {{ mlflow_postgres_secret_name }} -o jsonpath='{.data.{{ mlflow_postgres_db_field }}}' | base64 -d)"
+
+        cat "$DUMP" | kubectl -n "$NS" run mlflow-pgrestore --rm -i --restart=Never --image=postgres:15 --env="PGHOST=$PGHOST" --env="PGPORT={{ mlflow_postgres_port }}" --env="PGUSER=$PGUSER" --env="PGPASSWORD=$PGPASSWORD" --env="PGDATABASE=$PGDATABASE" --command -- sh -lc \
+          'set -euo pipefail; pg_restore --clean --if-exists --no-owner --no-privileges -d "$PGDATABASE"'
+      args:
+        executable: /bin/bash
       changed_when: true
 
     - name: Verify restored row counts
