@@ -78,6 +78,28 @@ spec:
               value: {{ .Values.streamConsumer.env.ENDPOINT_URL | quote }}
             - name: LOG_LEVEL
               value: {{ .Values.streamConsumer.env.LOG_LEVEL | quote }}
+            - name: PROMETHEUS_METRICS_PORT
+              value: {{ .Values.streamConsumer.env.PROMETHEUS_METRICS_PORT | quote }}
+          {{- if .Values.streamConsumer.metrics.enabled }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.streamConsumer.metrics.port }}
+          {{- end }}
           resources:
             {{- toYaml .Values.streamConsumer.resources | nindent 12 }}
+---
+{{- if .Values.streamConsumer.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.streamConsumer.metrics.serviceName }}
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: {{ .Values.streamConsumer.name }}
+  ports:
+    - name: metrics
+      port: {{ .Values.streamConsumer.metrics.port }}
+      targetPort: metrics
+{{- end }}
 {{- end }}

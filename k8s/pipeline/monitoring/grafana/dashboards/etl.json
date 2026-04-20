@@ -1,0 +1,166 @@
+{
+  "uid": "adventurelog-etl",
+  "title": "ETL Pipeline Monitoring",
+  "tags": ["adventurelog", "etl"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "id": 1, "type": "row", "title": "Class Balance & Volume",
+      "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}
+    },
+    {
+      "id": 2, "type": "stat", "title": "Positive Rate (rating ≥ 4)",
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "etl_rating_positive_rate", "refId": "A", "legendFormat": ""}],
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 0.3}, {"color": "green", "value": 0.4}]}}, "overrides": []}
+    },
+    {
+      "id": 3, "type": "stat", "title": "Negative Rate (rating < 4)",
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "1 - etl_rating_positive_rate", "refId": "A", "legendFormat": ""}],
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}, "overrides": []}
+    },
+    {
+      "id": 4, "type": "stat", "title": "Total Reviews Ingested",
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "etl_total_reviews", "refId": "A", "legendFormat": ""}],
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}, "overrides": []}
+    },
+    {
+      "id": 5, "type": "stat", "title": "Total Locations Ingested",
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "etl_total_locations", "refId": "A", "legendFormat": ""}],
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}, "overrides": []}
+    },
+    {
+      "id": 6, "type": "stat", "title": "States Processed OK",
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "etl_review_states_ok", "refId": "A", "legendFormat": ""}],
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}, "overrides": []}
+    },
+    {
+      "id": 7, "type": "stat", "title": "States Failed",
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "etl_review_states_failed", "refId": "A", "legendFormat": "Review"},
+        {"expr": "etl_metadata_states_failed", "refId": "B", "legendFormat": "Metadata"}
+      ],
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []}
+    },
+    {
+      "id": 8, "type": "row", "title": "Feature Completeness (Null %)",
+      "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5}
+    },
+    {
+      "id": 9, "type": "bargauge", "title": "Null % per Column",
+      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 6},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "{__name__=~\"etl_null_pct_.+\"}", "refId": "A", "legendFormat": "{{__name__}}"}],
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"]}, "showUnfilled": true},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.05}, {"color": "red", "value": 0.15}]}}, "overrides": []}
+    },
+    {
+      "id": 10, "type": "row", "title": "User & Location Averages",
+      "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 12}
+    },
+    {
+      "id": 11, "type": "stat", "title": "Avg User Visits",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 13},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "etl_avg_user_visits", "refId": "A", "legendFormat": ""}],
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}, "overrides": []}
+    },
+    {
+      "id": 12, "type": "stat", "title": "Avg User Rating",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 13},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "etl_avg_user_rating", "refId": "A", "legendFormat": ""}],
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 2, "min": 1, "max": 5, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 3}, {"color": "green", "value": 4}]}}, "overrides": []}
+    },
+    {
+      "id": 13, "type": "stat", "title": "Avg Location Rating",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 13},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "etl_avg_location_rating", "refId": "A", "legendFormat": ""}],
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 2, "min": 1, "max": 5, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 3}, {"color": "green", "value": 4}]}}, "overrides": []}
+    },
+    {
+      "id": 14, "type": "stat", "title": "Avg Location Popularity",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 13},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "etl_avg_location_popularity", "refId": "A", "legendFormat": ""}],
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}, "overrides": []}
+    },
+    {
+      "id": 15, "type": "row", "title": "Vibe Tag Averages",
+      "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 17}
+    },
+    {
+      "id": 16, "type": "bargauge", "title": "Average Score per Vibe Tag",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 18},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "{__name__=~\"etl_vibe_avg_.+\"}", "refId": "A", "legendFormat": "{{__name__}}"}],
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"]}, "showUnfilled": true},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 3, "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}, "overrides": []}
+    },
+    {
+      "id": 21, "type": "row", "title": "Category Distribution",
+      "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 26}
+    },
+    {
+      "id": 22, "type": "bargauge", "title": "Location Count per Category",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 27},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "{__name__=~\"etl_category_.+_count\"}", "refId": "A", "legendFormat": "{{__name__}}"}],
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"]}, "showUnfilled": true},
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}, "overrides": []}
+    },
+    {
+      "id": 17, "type": "row", "title": "Drift Detection",
+      "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 35}
+    },
+    {
+      "id": 18, "type": "stat", "title": "Drift Detected",
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 36},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "etl_drift_detected", "refId": "A", "legendFormat": ""}],
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "short", "mappings": [{"type": "value", "options": {"0": {"text": "NO DRIFT", "color": "green", "index": 0}, "1": {"text": "DRIFT !", "color": "red", "index": 1}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []}
+    },
+    {
+      "id": 19, "type": "gauge", "title": "MMD Distance",
+      "gridPos": {"h": 4, "w": 10, "x": 4, "y": 36},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "etl_drift_mmd_distance", "refId": "A", "legendFormat": ""}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "showThresholdMarkers": true},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 4, "min": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.05}, {"color": "red", "value": 0.1}]}}, "overrides": []}
+    },
+    {
+      "id": 20, "type": "gauge", "title": "P-Value (< 0.05 = drift)",
+      "gridPos": {"h": 4, "w": 10, "x": 14, "y": 36},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "etl_drift_p_val", "refId": "A", "legendFormat": ""}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "showThresholdMarkers": true},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 4, "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 0.05}]}}, "overrides": []}
+    }
+  ]
+}

@@ -74,6 +74,11 @@ streamConsumer:
     REDIS_DB: "0"
     ENDPOINT_URL: "http://minio.proj10-platform.svc.cluster.local:9000"
     LOG_LEVEL: "INFO"
+    PROMETHEUS_METRICS_PORT: "9100"
+  metrics:
+    enabled: true
+    serviceName: stream-consumer-metrics
+    port: 9100
   nodeSelector:
     workload: large
   tolerations:
@@ -88,6 +93,60 @@ streamConsumer:
     limits:
       cpu: "500m"
       memory: "1Gi"
+
+monitoring:
+  enabled: true
+
+  pushgateway:
+    name: pushgateway
+    image:
+      repository: prom/pushgateway
+      tag: latest
+    service:
+      port: 9091
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "250m"
+        memory: "256Mi"
+
+  prometheus:
+    name: prometheus
+    image:
+      repository: prom/prometheus
+      tag: latest
+    service:
+      port: 9090
+    storage:
+      size: 10Gi
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+
+  grafana:
+    name: grafana
+    image:
+      repository: grafana/grafana
+      tag: latest
+    service:
+      port: 3000
+    adminUser: admin
+    adminPassword: admin
+    storage:
+      size: 5Gi
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
 
 modelServer:
   enabled: false
