@@ -7,6 +7,10 @@ spec:
   arguments:
     parameters:
     - name: model-version
+    - name: app-repo-url
+      value: "https://github.com/lefteriskomvopoulos/GemSpotApp.git"
+    - name: app-branch
+      value: "main"
     - name: staging-namespace
       value: "proj10-staging"
     - name: staging-frontend-service
@@ -17,11 +21,97 @@ spec:
       value: "proj10-backend"
     - name: staging-backend-port
       value: "80"
+    - name: staging-ml-serving-service
+      value: "ml-serving.proj10-platform.svc.cluster.local"
+    - name: staging-ml-serving-port
+      value: "8000"
+
+  podMetadata:
+    annotations:
+      seccomp.security.alpha.kubernetes.io/pod: unconfined
+      container.apparmor.security.beta.kubernetes.io/main: unconfined
+
+  volumeClaimTemplates:
+  - metadata:
+      name: workdir
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 2Gi
+
+  volumes:
+  - name: buildkitd
+    emptyDir: {}
 
   templates:
   - name: test-flow
     steps:
-      # Step 1: Integration test - verify /test endpoint returns valid prediction
+      - - name: checkout-app
+          template: checkout-app
+          arguments:
+            parameters:
+            - name: app-repo-url
+              value: "{{workflow.parameters.app-repo-url}}"
+            - name: app-branch
+              value: "{{workflow.parameters.app-branch}}"
+
+      - - name: resolve-drift
+          template: resolve-drift
+          arguments:
+            parameters:
+            - name: app-tag
+              value: "{{steps.checkout-app.outputs.parameters.app-tag}}"
+            - name: model-version
+              value: "{{workflow.parameters.model-version}}"
+
+      - - name: build-frontend
+          template: buildkit-rootless
+          arguments:
+            parameters:
+            - name: image-name
+              value: "proj10-adventurelog-frontend"
+            - name: build-context
+              value: "/mnt/workspace/frontend"
+            - name: dockerfile-path
+              value: "/mnt/workspace/frontend"
+            - name: image-tag
+              value: "{{steps.resolve-drift.outputs.parameters.desired-app-tag}}"
+            - name: cache-ref
+              value: "proj10-adventurelog-frontend:buildcache"
+          when: "'{{steps.resolve-drift.outputs.parameters.app-changed}}' == 'true'"
+        - name: build-backend
+          template: buildkit-rootless
+          arguments:
+            parameters:
+            - name: image-name
+              value: "proj10-adventurelog-backend"
+            - name: build-context
+              value: "/mnt/workspace/backend"
+            - name: dockerfile-path
+              value: "/mnt/workspace/backend"
+            - name: image-tag
+              value: "{{steps.resolve-drift.outputs.parameters.desired-app-tag}}"
+            - name: cache-ref
+              value: "proj10-adventurelog-backend:buildcache"
+          when: "'{{steps.resolve-drift.outputs.parameters.app-changed}}' == 'true'"
+
+      - - name: deploy-staging-app
+          template: deploy-staging-app
+          arguments:
+            parameters:
+            - name: app-tag
+              value: "{{steps.resolve-drift.outputs.parameters.desired-app-tag}}"
+          when: "'{{steps.resolve-drift.outputs.parameters.app-changed}}' == 'true'"
+
+      - - name: deploy-ml-serving
+          template: deploy-ml-serving
+          arguments:
+            parameters:
+            - name: model-tag
+              value: "{{steps.resolve-drift.outputs.parameters.desired-model-tag}}"
+          when: "'{{steps.resolve-drift.outputs.parameters.model-changed}}' == 'true'"
+
       - - name: integration-test
           template: check-predict
           arguments:
@@ -30,10 +120,11 @@ spec:
               value: "http://{{workflow.parameters.staging-frontend-service}}.{{workflow.parameters.staging-namespace}}.svc.cluster.local:{{workflow.parameters.staging-frontend-port}}"
             - name: backend-url
               value: "http://{{workflow.parameters.staging-backend-service}}.{{workflow.parameters.staging-namespace}}.svc.cluster.local:{{workflow.parameters.staging-backend-port}}"
+            - name: ml-serving-url
+              value: "http://{{workflow.parameters.staging-ml-serving-service}}:{{workflow.parameters.staging-ml-serving-port}}"
             - name: model-version
               value: "{{workflow.parameters.model-version}}"
 
-      # Step 2: Mark as approved in MLflow if integration test passes
       - - name: mark-staging-approved
           template: set-staging-approved
           arguments:
@@ -42,7 +133,6 @@ spec:
               value: "{{workflow.parameters.model-version}}"
           when: "'{{steps.integration-test.outputs.parameters.result}}' == 'pass'"
 
-      # Step 3: Branching logic - promote if tests pass
       - - name: promote-on-success
           template: trigger-promote
           arguments:
@@ -51,12 +141,224 @@ spec:
               value: "{{workflow.parameters.model-version}}"
           when: "'{{steps.integration-test.outputs.parameters.result}}' == 'pass'"
 
-  # Template: Check /test endpoint (predict with test image)
+  - name: checkout-app
+    inputs:
+      parameters:
+      - name: app-repo-url
+      - name: app-branch
+    outputs:
+      parameters:
+      - name: app-sha
+        valueFrom:
+          path: /tmp/app-sha.txt
+      - name: app-tag
+        valueFrom:
+          path: /tmp/app-tag.txt
+    container:
+      image: alpine/git:v2.26.2
+      workingDir: /mnt/workspace
+      command: [sh, -c]
+      args:
+        - |
+          set -eu
+          rm -rf /mnt/workspace/.git /mnt/workspace/* /mnt/workspace/.[!.]* /mnt/workspace/..?* 2>/dev/null || true
+          git clone --depth 1 --branch "{{inputs.parameters.app-branch}}" "{{inputs.parameters.app-repo-url}}" /mnt/workspace
+          APP_SHA="$(git -C /mnt/workspace rev-parse --short=12 HEAD)"
+          echo "$APP_SHA" > /tmp/app-sha.txt
+          echo "staging-$APP_SHA" > /tmp/app-tag.txt
+          echo "Resolved app tag: staging-$APP_SHA"
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/workspace
+
+  - name: resolve-drift
+    inputs:
+      parameters:
+      - name: app-tag
+      - name: model-version
+    outputs:
+      parameters:
+      - name: app-changed
+        valueFrom:
+          path: /tmp/app-changed.txt
+      - name: model-changed
+        valueFrom:
+          path: /tmp/model-changed.txt
+      - name: desired-app-tag
+        valueFrom:
+          path: /tmp/desired-app-tag.txt
+      - name: desired-model-tag
+        valueFrom:
+          path: /tmp/desired-model-tag.txt
+    container:
+      image: argoproj/argocd:latest
+      command: [sh, -c]
+      args:
+        - |
+          set -eu
+
+          argocd login argocd-server.argocd.svc.cluster.local \
+            --username admin \
+            --password "$ARGOCD_PASSWORD" \
+            --insecure
+
+          DESIRED_APP="{{inputs.parameters.app-tag}}"
+          DESIRED_MODEL="staging-1.0.{{inputs.parameters.model-version}}"
+
+          STAGING_PARAMS="$(argocd app get proj10-staging --show-params || true)"
+          PIPELINE_PARAMS="$(argocd app get proj10-pipeline --show-params || true)"
+
+          CURRENT_FRONTEND="$(printf '%s\n' "$STAGING_PARAMS" | awk '$1=="frontend.image.tag"{print $2; exit}')"
+          CURRENT_BACKEND="$(printf '%s\n' "$STAGING_PARAMS" | awk '$1=="backend.image.tag"{print $2; exit}')"
+          CURRENT_MODEL="$(printf '%s\n' "$PIPELINE_PARAMS" | awk '$1=="mlServing.image.tag"{print $2; exit}')"
+
+          if [ -z "$CURRENT_FRONTEND" ]; then CURRENT_FRONTEND="staging-latest"; fi
+          if [ -z "$CURRENT_BACKEND" ]; then CURRENT_BACKEND="staging-latest"; fi
+          if [ -z "$CURRENT_MODEL" ]; then CURRENT_MODEL="latest"; fi
+
+          APP_CHANGED="false"
+          MODEL_CHANGED="false"
+
+          if [ "$CURRENT_FRONTEND" != "$DESIRED_APP" ] || [ "$CURRENT_BACKEND" != "$DESIRED_APP" ]; then
+            APP_CHANGED="true"
+          fi
+
+          if [ "$CURRENT_MODEL" != "$DESIRED_MODEL" ]; then
+            MODEL_CHANGED="true"
+          fi
+
+          echo "$APP_CHANGED" > /tmp/app-changed.txt
+          echo "$MODEL_CHANGED" > /tmp/model-changed.txt
+          echo "$DESIRED_APP" > /tmp/desired-app-tag.txt
+          echo "$DESIRED_MODEL" > /tmp/desired-model-tag.txt
+
+          echo "Current frontend tag: $CURRENT_FRONTEND"
+          echo "Current backend tag : $CURRENT_BACKEND"
+          echo "Desired app tag     : $DESIRED_APP"
+          echo "App changed         : $APP_CHANGED"
+          echo "Current model tag   : $CURRENT_MODEL"
+          echo "Desired model tag   : $DESIRED_MODEL"
+          echo "Model changed       : $MODEL_CHANGED"
+      env:
+      - name: ARGOCD_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: argocd-initial-admin-secret
+            key: password
+
+  - name: buildkit-rootless
+    retryStrategy:
+      limit: "3"
+      retryPolicy: "Always"
+      backoff:
+        duration: "30s"
+        factor: "2"
+    inputs:
+      parameters:
+      - name: image-name
+      - name: build-context
+      - name: dockerfile-path
+      - name: image-tag
+      - name: cache-ref
+    container:
+      image: moby/buildkit:rootless
+      env:
+      - name: BUILDKITD_FLAGS
+        value: --oci-worker-no-process-sandbox
+      command: [buildctl-daemonless.sh]
+      args:
+        - build
+        - --frontend
+        - dockerfile.v0
+        - --local
+        - context={{inputs.parameters.build-context}}
+        - --local
+        - dockerfile={{inputs.parameters.dockerfile-path}}
+        - --output
+        - type=image,name=registry.kube-system.svc.cluster.local:5000/{{inputs.parameters.image-name}}:{{inputs.parameters.image-tag}},push=true,registry.insecure=true
+        - --export-cache
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/{{inputs.parameters.cache-ref}},mode=max,registry.insecure=true
+        - --import-cache
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/{{inputs.parameters.cache-ref}},registry.insecure=true
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "500m"
+        limits:
+          memory: "3Gi"
+          cpu: "1"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: Unconfined
+        appArmorProfile:
+          type: Unconfined
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/workspace
+      - name: buildkitd
+        mountPath: /home/user/.local/share/buildkit
+
+  - name: deploy-staging-app
+    inputs:
+      parameters:
+      - name: app-tag
+    container:
+      image: argoproj/argocd:latest
+      command: [sh, -c]
+      args:
+        - |
+          set -eu
+          argocd login argocd-server.argocd.svc.cluster.local \
+            --username admin \
+            --password "$ARGOCD_PASSWORD" \
+            --insecure
+
+          argocd app set proj10-staging \
+            --helm-set-string frontend.image.tag={{inputs.parameters.app-tag}} \
+            --helm-set-string backend.image.tag={{inputs.parameters.app-tag}}
+          argocd app sync proj10-staging
+          argocd app wait proj10-staging --health --sync --timeout 600
+      env:
+      - name: ARGOCD_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: argocd-initial-admin-secret
+            key: password
+
+  - name: deploy-ml-serving
+    inputs:
+      parameters:
+      - name: model-tag
+    container:
+      image: argoproj/argocd:latest
+      command: [sh, -c]
+      args:
+        - |
+          set -eu
+          argocd login argocd-server.argocd.svc.cluster.local \
+            --username admin \
+            --password "$ARGOCD_PASSWORD" \
+            --insecure
+
+          argocd app set proj10-pipeline \
+            --helm-set-string mlServing.image.tag={{inputs.parameters.model-tag}}
+          argocd app sync proj10-pipeline
+          argocd app wait proj10-pipeline --health --sync --timeout 600
+      env:
+      - name: ARGOCD_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: argocd-initial-admin-secret
+            key: password
+
   - name: check-predict
     inputs:
       parameters:
       - name: frontend-url
       - name: backend-url
+      - name: ml-serving-url
       - name: model-version
     outputs:
       parameters:
@@ -71,6 +373,7 @@ spec:
         set -eu
         echo "Testing staging frontend: {{inputs.parameters.frontend-url}}"
         echo "Testing staging backend: {{inputs.parameters.backend-url}}"
+        echo "Testing staging ml-serving: {{inputs.parameters.ml-serving-url}}"
 
         FRONTEND_OK=0
         for i in $(seq 1 12); do
@@ -97,7 +400,25 @@ spec:
         done
 
         if [ "$FRONTEND_OK" -ne 1 ] || [ "$BACKEND_OK" -ne 1 ]; then
-          echo "✗ Integration test FAILED: staging services not healthy"
+          echo "✗ Integration test FAILED: staging app services not healthy"
+          echo "fail" > /tmp/result.txt
+          exit 1
+        fi
+
+        MLSERVING_OK=0
+        for i in $(seq 1 12); do
+          code="$(curl -s -o /tmp/ml-serving-health.json -w "%{http_code}" "{{inputs.parameters.ml-serving-url}}/health" || true)"
+          if [ "$code" = "200" ]; then
+            MLSERVING_OK=1
+            echo "ml-serving ready with HTTP $code"
+            break
+          fi
+          echo "Waiting for ml-serving... ($i/12) http=$code"
+          sleep 5
+        done
+
+        if [ "$MLSERVING_OK" -ne 1 ]; then
+          echo "✗ Integration test FAILED: ml-serving not healthy"
           echo "fail" > /tmp/result.txt
           exit 1
         fi
@@ -105,7 +426,6 @@ spec:
         echo "✓ Integration test PASSED for model version {{inputs.parameters.model-version}}"
         echo "pass" > /tmp/result.txt
 
-  # Template: Set staging-approved alias in MLflow
   - name: set-staging-approved
     inputs:
       parameters:
@@ -122,7 +442,6 @@ spec:
         echo "✓ Model version {{inputs.parameters.model-version}} marked as 'staging-approved' in MLflow"
         echo "This version has successfully passed all staging tests"
 
-  # Template: Trigger promote-model workflow
   - name: trigger-promote
     inputs:
       parameters:

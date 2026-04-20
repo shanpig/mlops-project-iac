@@ -190,11 +190,11 @@ spec:
         - --local
         - dockerfile=/mnt/workspace
         - --output
-        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-app:staging-1.0.{{inputs.parameters.model-version}},push=true,registry.insecure=true
+        - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-serving:staging-1.0.{{inputs.parameters.model-version}},push=true,registry.insecure=true
         - --export-cache
-        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-app:buildcache,mode=max,registry.insecure=true
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-serving:buildcache,mode=max,registry.insecure=true
         - --import-cache
-        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-app:buildcache,registry.insecure=true
+        - type=registry,ref=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-serving:buildcache,registry.insecure=true
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000

@@ -22,7 +22,7 @@ spec:
         - |
           echo "Deploying model {{inputs.parameters.model-version}} to {{inputs.parameters.environment}}..."
           tag="{{inputs.parameters.environment}}-1.0.{{inputs.parameters.model-version}}"
-          app_name="proj10-{{inputs.parameters.environment}}"
+          app_name="proj10-pipeline"
 
           argocd login argocd-server.argocd.svc.cluster.local \
             --username admin \
@@ -30,8 +30,7 @@ spec:
             --insecure
 
           argocd app set "$app_name" \
-            --helm-set-string frontend.image.tag=$tag \
-            --helm-set-string backend.image.tag=$tag
+            --helm-set-string mlServing.image.tag=$tag
           argocd app sync "$app_name"
       env:
         - name: ARGOCD_PASSWORD
