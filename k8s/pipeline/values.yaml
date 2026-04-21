@@ -13,7 +13,7 @@ redpanda:
     tag: v25.3.7
   service:
     kafkaPort: 9092
-    schemaRegistryPort: 8081
+    schemaRegistryPort: 8090
     pandaProxyPort: 8082
     adminPort: 9644
     rpcPort: 33145
