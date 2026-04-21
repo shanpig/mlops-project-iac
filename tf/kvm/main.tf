@@ -34,6 +34,7 @@ resource "openstack_networking_port_v2" "sharednet1_ports" {
     data.openstack_networking_secgroup_v2.allow_8081.id,
     data.openstack_networking_secgroup_v2.allow_8090.id,
     data.openstack_networking_secgroup_v2.allow_8082.id,
+    data.openstack_networking_secgroup_v2.allow_8083.id,
     data.openstack_networking_secgroup_v2.allow_http_80.id,
     data.openstack_networking_secgroup_v2.allow_9090.id,
     data.openstack_networking_secgroup_v2.allow_3000_grafana.id,
