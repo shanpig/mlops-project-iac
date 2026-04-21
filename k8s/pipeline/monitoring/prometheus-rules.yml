@@ -1,0 +1,52 @@
+groups:
+  - name: platform-health
+    rules:
+      - alert: MlApiDown
+        expr: up{job="ml-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: ml-api
+        annotations:
+          summary: "ml-api is down"
+          description: "Prometheus cannot scrape ml-api for more than 2 minutes."
+
+      - alert: StreamConsumerDown
+        expr: up{job="stream-consumer"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: stream-consumer
+        annotations:
+          summary: "stream-consumer metrics endpoint is down"
+          description: "Prometheus cannot scrape stream-consumer for more than 5 minutes."
+
+      - alert: PushgatewayDown
+        expr: up{job="pushgateway"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          component: pushgateway
+        annotations:
+          summary: "pushgateway is down"
+          description: "Prometheus cannot scrape pushgateway for more than 2 minutes."
+
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: prometheus
+        annotations:
+          summary: "prometheus is down"
+          description: "Prometheus self-scrape failed for more than 2 minutes."
+
+      - alert: PrometheusTargetScrapeFailure
+        expr: sum(up == 0) by (job) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: "One or more scrape targets are failing"
+          description: "At least one monitored job has failed scrapes for more than 5 minutes."

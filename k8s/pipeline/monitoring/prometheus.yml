@@ -2,6 +2,14 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+rule_files:
+  - /etc/prometheus/rules/prometheus-rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
 scrape_configs:
   # ml-api (FastAPI) — prometheus-fastapi-instrumentator exposes /metrics on :8000
   - job_name: 'ml-api'
@@ -18,3 +26,8 @@ scrape_configs:
     honor_labels: true
     static_configs:
       - targets: ['pushgateway:9091']
+
+  # Self-scrape for Prometheus health and capacity
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['prometheus:9090']

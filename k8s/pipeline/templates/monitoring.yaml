@@ -11,6 +11,24 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  name: prometheus-rules
+  namespace: {{ .Values.namespace }}
+data:
+  prometheus-rules.yml: |
+{{ .Files.Get "monitoring/prometheus-rules.yml" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: {{ .Values.namespace }}
+data:
+  alertmanager.yml: |
+{{ .Files.Get "monitoring/alertmanager.yml" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
   name: grafana-datasources
   namespace: {{ .Values.namespace }}
 data:
@@ -91,6 +109,54 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: {{ .Values.monitoring.alertmanager.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.monitoring.alertmanager.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.monitoring.alertmanager.name }}
+    spec:
+      containers:
+        - name: alertmanager
+          image: {{ .Values.monitoring.alertmanager.image.repository }}:{{ .Values.monitoring.alertmanager.image.tag }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config.file=/etc/alertmanager/alertmanager.yml
+          ports:
+            - containerPort: {{ .Values.monitoring.alertmanager.service.port }}
+              name: http
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alertmanager/alertmanager.yml
+              subPath: alertmanager.yml
+          resources:
+            {{- toYaml .Values.monitoring.alertmanager.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: alertmanager-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.monitoring.alertmanager.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: {{ .Values.monitoring.alertmanager.name }}
+  ports:
+    - name: http
+      port: {{ .Values.monitoring.alertmanager.service.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
   name: {{ .Values.monitoring.prometheus.name }}
   namespace: {{ .Values.namespace }}
 spec:
@@ -119,6 +185,9 @@ spec:
             - name: config
               mountPath: /etc/prometheus/prometheus.yml
               subPath: prometheus.yml
+            - name: rules
+              mountPath: /etc/prometheus/rules/prometheus-rules.yml
+              subPath: prometheus-rules.yml
             - name: data
               mountPath: /prometheus
           resources:
@@ -127,6 +196,9 @@ spec:
         - name: config
           configMap:
             name: prometheus-config
+        - name: rules
+          configMap:
+            name: prometheus-rules
         - name: data
           persistentVolumeClaim:
             claimName: prometheus-pvc

@@ -1,0 +1,45 @@
+{{- if .Values.autoscaling.enabled }}
+{{- if and .Values.mlApi.enabled .Values.autoscaling.mlApi.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Values.mlApi.name }}-hpa
+  namespace: {{ .Values.namespace }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.mlApi.name }}
+  minReplicas: {{ .Values.autoscaling.mlApi.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.mlApi.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.mlApi.targetCPUUtilizationPercentage }}
+---
+{{- end }}
+{{- if and .Values.mlServing.enabled .Values.autoscaling.mlServing.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Values.mlServing.name }}-hpa
+  namespace: {{ .Values.namespace }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.mlServing.name }}
+  minReplicas: {{ .Values.autoscaling.mlServing.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.mlServing.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.mlServing.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- end }}
