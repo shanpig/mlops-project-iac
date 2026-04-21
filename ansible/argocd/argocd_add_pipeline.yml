@@ -40,9 +40,21 @@
         - https://raw.githubusercontent.com/shanpig/mlops-project-iac/main/k8s/secrets/proj10-platform-nimtable-secrets-sealedsecret.yaml
       command: kubectl apply -f {{ item }}
 
-    - name: Detect external IP starting with 10.56
+    - name: Read floating IP from Terraform output (controller-side)
+      delegate_to: localhost
+      become: false
+      command: terraform -chdir=../tf/kvm output -raw floating_ip_out
+      register: tf_floating_ip
+      failed_when: false
+      changed_when: false
+
+    - name: Detect fallback external IP starting with 10.56
       set_fact:
-        external_ip: "{{ ansible_all_ipv4_addresses | select('match', '^10\\.56\\..*') | list | first }}"
+        external_ip_fallback: "{{ ansible_all_ipv4_addresses | select('match', '^10\\.56\\..*') | list | first }}"
+
+    - name: Select external IP for service exposure
+      set_fact:
+        external_ip: "{{ (tf_floating_ip.stdout | default('') | trim) if (tf_floating_ip.rc is defined and tf_floating_ip.rc == 0 and (tf_floating_ip.stdout | trim) != '') else external_ip_fallback }}"
 
     - name: Check if ArgoCD app exists
       command: argocd app get {{ app_name }} --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}
@@ -62,6 +74,9 @@
         --helm-set-string redisInsight.externalIP={{ external_ip }} \
         --helm-set-string nimtable.externalIP={{ external_ip }} \
         --helm-set-string nimtableWeb.externalIP={{ external_ip }} \
+        --helm-set-string monitoring.prometheus.externalIP={{ external_ip }} \
+        --helm-set-string monitoring.grafana.externalIP={{ external_ip }} \
+        --helm-set-string redpanda.externalIP={{ external_ip }} \
         --sync-policy automated --self-heal \
         --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}
 
@@ -77,6 +92,9 @@
         --helm-set-string redisInsight.externalIP={{ external_ip }} \
         --helm-set-string nimtable.externalIP={{ external_ip }} \
         --helm-set-string nimtableWeb.externalIP={{ external_ip }} \
+        --helm-set-string monitoring.prometheus.externalIP={{ external_ip }} \
+        --helm-set-string monitoring.grafana.externalIP={{ external_ip }} \
+        --helm-set-string redpanda.externalIP={{ external_ip }} \
         --sync-policy automated --self-heal \
         --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}
 

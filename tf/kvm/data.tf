@@ -38,6 +38,14 @@ data "openstack_networking_secgroup_v2" "allow_9090" {
   name = "allow-9090"
 }
 
+data "openstack_networking_secgroup_v2" "allow_3000_grafana" {
+  name = "allow-3000"
+}
+
+data "openstack_networking_secgroup_v2" "allow_9092_redpanda" {
+  name = "allow-9092-proj10"
+}
+
 data "openstack_networking_secgroup_v2" "allow_13000_nimtable_web" {
   name = "allow-13000-proj10"
 }

@@ -7,6 +7,7 @@ pipeline:
 redpanda:
   enabled: true
   name: redpanda
+  externalIP: ""
   image:
     repository: docker.redpanda.com/redpandadata/redpanda
     tag: v25.3.7
@@ -129,7 +130,7 @@ monitoring:
 
   prometheus:
     name: prometheus
-    externalIP: "0.0.0.0"
+    externalIP: ""
     image:
       repository: prom/prometheus
       tag: latest
@@ -147,7 +148,7 @@ monitoring:
 
   grafana:
     name: grafana
-    externalIP: "0.0.0.0"
+    externalIP: ""
     image:
       repository: grafana/grafana
       tag: latest
@@ -248,9 +249,9 @@ mlApi:
     requests:
       cpu: "100m"
       memory: "256Mi"
-      limits:
-        cpu: "500m"
-        memory: "1Gi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
 
 autoscaling:
   enabled: true
@@ -373,7 +374,7 @@ adminer:
     tag: "latest"
   service:
     port: 5050
-  externalIP: "0.0.0.0"
+  externalIP: ""
   defaultServer: proj10-postgres.proj10-production.svc.cluster.local
   resources:
     requests:
@@ -391,7 +392,7 @@ redisInsight:
     tag: "latest"
   service:
     port: 15540
-  externalIP: "0.0.0.0"
+  externalIP: ""
   storage:
     size: 5Gi
   env:
@@ -415,7 +416,7 @@ nimtable:
   service:
     port: 18182
     targetPort: 8182
-  externalIP: "0.0.0.0"
+  externalIP: ""
   javaOpts: "-Xmx2g -Xms256m"
   config:
     existingSecret: nimtable-config
@@ -437,7 +438,7 @@ nimtableWeb:
   service:
     port: 13000
     targetPort: 3000
-  externalIP: "0.0.0.0"
+  externalIP: ""
   existingSecret: nimtable-secrets
   secretKeys:
     databaseUrl: NIMTABLE_DATABASE_URL

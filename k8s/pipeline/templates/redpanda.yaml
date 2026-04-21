@@ -43,6 +43,10 @@ metadata:
   name: {{ .Values.redpanda.name }}
   namespace: {{ .Values.namespace }}
 spec:
+  {{- if .Values.redpanda.externalIP }}
+  externalIPs:
+    - {{ .Values.redpanda.externalIP }}
+  {{- end }}
   selector:
     app: {{ .Values.redpanda.name }}
   ports:
