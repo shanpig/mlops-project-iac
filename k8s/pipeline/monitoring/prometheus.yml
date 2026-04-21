@@ -28,6 +28,18 @@ scrape_configs:
     static_configs:
       - targets: ['pushgateway:9091']
 
+  # GemSpot serving service metrics (model-serving)
+  - job_name: 'gemspot-serving'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['ml-serving:8000']
+
+  # GemSpot app-level feedback metrics exposed by Django app (staging)
+  - job_name: 'gemspot-app'
+    metrics_path: /api/gemspot/metrics/
+    static_configs:
+      - targets: ['proj10-backend.proj10-staging.svc.cluster.local:80']
+
   # Self-scrape for Prometheus health and capacity
   - job_name: 'prometheus'
     static_configs:
