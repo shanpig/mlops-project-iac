@@ -76,6 +76,7 @@
         --helm-set-string nimtableWeb.externalIP={{ external_ip }} \
         --helm-set-string monitoring.prometheus.externalIP={{ external_ip }} \
         --helm-set-string monitoring.grafana.externalIP={{ external_ip }} \
+        --helm-set-string redpandaConsole.externalIP={{ external_ip }} \
         --helm-set-string redpanda.externalIP={{ external_ip }} \
         --sync-policy automated --self-heal \
         --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}
@@ -94,6 +95,7 @@
         --helm-set-string nimtableWeb.externalIP={{ external_ip }} \
         --helm-set-string monitoring.prometheus.externalIP={{ external_ip }} \
         --helm-set-string monitoring.grafana.externalIP={{ external_ip }} \
+        --helm-set-string redpandaConsole.externalIP={{ external_ip }} \
         --helm-set-string redpanda.externalIP={{ external_ip }} \
         --sync-policy automated --self-heal \
         --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}
