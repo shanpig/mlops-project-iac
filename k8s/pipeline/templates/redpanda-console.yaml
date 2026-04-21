@@ -1,0 +1,46 @@
+{{- if .Values.redpandaConsole.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.redpandaConsole.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.redpandaConsole.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.redpandaConsole.name }}
+    spec:
+      containers:
+        - name: redpanda-console
+          image: {{ .Values.redpandaConsole.image.repository }}:{{ .Values.redpandaConsole.image.tag }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KAFKA_BROKERS
+              value: {{ .Values.redpandaConsole.env.KAFKA_BROKERS | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.redpandaConsole.service.targetPort }}
+          resources:
+            {{- toYaml .Values.redpandaConsole.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.redpandaConsole.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  {{- if .Values.redpandaConsole.externalIP }}
+  externalIPs:
+    - {{ .Values.redpandaConsole.externalIP }}
+  {{- end }}
+  selector:
+    app: {{ .Values.redpandaConsole.name }}
+  ports:
+    - name: http
+      port: {{ .Values.redpandaConsole.service.port }}
+      targetPort: http
+{{- end }}

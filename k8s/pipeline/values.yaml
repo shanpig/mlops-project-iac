@@ -29,6 +29,27 @@ redpanda:
   logRetentionMs: "2592000000"
   logSegmentMs: "3600000"
 
+redpandaConsole:
+  enabled: true
+  name: redpanda-console
+  externalIP: ""
+  image:
+    repository: docker.redpanda.com/redpandadata/console
+    tag: latest
+  service:
+    # Keep external service port separate from app frontend ports.
+    port: 8083
+    targetPort: 8080
+  env:
+    KAFKA_BROKERS: "redpanda:9092"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
 redis:
   enabled: true
   name: redis
