@@ -14,7 +14,7 @@ redpanda:
   service:
     kafkaPort: 9092
     schemaRegistryPort: 8090
-    pandaProxyPort: 8082
+    pandaProxyPort: 18082
     adminPort: 9644
     rpcPort: 33145
   storage:
