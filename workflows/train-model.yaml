@@ -374,7 +374,7 @@ spec:
           python src/retrain.py \
             --config "configs/candidates.yaml" \
             --candidate "xgboost_v2" \
-            --parquet-path "s3://agent-datalake/iceberg/adventurelog/training_data/data/" \
+            --parquet-path "s3://agent-datalake/iceberg/adventurelog.db/training_data/data/" \
             --old-model "${BASE_MODEL_PATH}" \
             --artifact-dir "artifacts/models" \
             --backup-dir "artifacts/models/_backup" \
