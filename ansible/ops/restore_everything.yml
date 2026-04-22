@@ -30,6 +30,7 @@
     minio_secret_key_field: secretkey
     minio_endpoint: http://minio.proj10-platform.svc.cluster.local:9000
     minio_restore_image: bitnami/minio-client:latest
+    minio_restore_pod_running_timeout: 10m
     minio_buckets:
       - agent-datalake
       - mlflow-artifacts
@@ -75,7 +76,7 @@
         AK="$(kubectl -n {{ minio_namespace }} get secret {{ minio_secret_name }} -o jsonpath='{.data.{{ minio_access_key_field }}}' | base64 -d)"
         SK="$(kubectl -n {{ minio_namespace }} get secret {{ minio_secret_name }} -o jsonpath='{.data.{{ minio_secret_key_field }}}' | base64 -d)"
         cat "{{ backup_dir }}/minio/${BUCKET}.tgz" | \
-          kubectl -n {{ minio_namespace }} run mc-restore --rm -i --restart=Never --image={{ minio_restore_image }} --env="AWS_ACCESS_KEY_ID=$AK" --env="AWS_SECRET_ACCESS_KEY=$SK" --command -- sh -lc \
+          kubectl -n {{ minio_namespace }} run mc-restore --rm -i --restart=Never --pod-running-timeout={{ minio_restore_pod_running_timeout }} --image={{ minio_restore_image }} --env="AWS_ACCESS_KEY_ID=$AK" --env="AWS_SECRET_ACCESS_KEY=$SK" --command -- sh -lc \
           'set -euo pipefail;
            mc alias set m {{ minio_endpoint }} "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" >/dev/null;
            rm -rf /tmp/'"${BUCKET}"';
