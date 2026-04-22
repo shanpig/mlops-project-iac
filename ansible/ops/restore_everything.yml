@@ -83,6 +83,7 @@
            curl -fsSL -o /usr/local/bin/mc {{ minio_mc_download_url }};
            chmod +x /usr/local/bin/mc;
            mc alias set m {{ minio_endpoint }} "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" >/dev/null;
+           mc mb --ignore-existing m/'"${BUCKET}"' >/dev/null;
            rm -rf /tmp/'"${BUCKET}"';
            mkdir -p /tmp;
            tar -C /tmp -xzf -;
