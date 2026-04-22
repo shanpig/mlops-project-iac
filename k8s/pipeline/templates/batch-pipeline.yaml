@@ -1,0 +1,74 @@
+{{- if .Values.batchPipeline.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.batchPipeline.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  schedule: {{ .Values.batchPipeline.schedule | quote }}
+  suspend: {{ .Values.batchPipeline.suspend }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          {{- with .Values.batchPipeline.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.batchPipeline.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: batch-pipeline
+              image: {{ .Values.batchPipeline.image.repository }}:{{ .Values.batchPipeline.image.tag }}
+              imagePullPolicy: IfNotPresent
+              command: ["sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  export APP_DB_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:5432/${PGDATABASE}"
+                  export ICEBERG_DB_URL="postgresql+psycopg2://${PGUSER}:${PGPASSWORD}@${PGHOST}:5432/iceberg_catalog"
+                  exec python /gemspot/batch_pipeline/pipeline.py
+              env:
+                - name: PGHOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.batchPipeline.postgresSecret.name | quote }}
+                      key: {{ .Values.batchPipeline.postgresSecret.keys.host | quote }}
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.batchPipeline.postgresSecret.name | quote }}
+                      key: {{ .Values.batchPipeline.postgresSecret.keys.username | quote }}
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.batchPipeline.postgresSecret.name | quote }}
+                      key: {{ .Values.batchPipeline.postgresSecret.keys.password | quote }}
+                - name: PGDATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.batchPipeline.postgresSecret.name | quote }}
+                      key: {{ .Values.batchPipeline.postgresSecret.keys.dbname | quote }}
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.batchPipeline.minioSecret.name | quote }}
+                      key: {{ .Values.batchPipeline.minioSecret.keys.accessKey | quote }}
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.batchPipeline.minioSecret.name | quote }}
+                      key: {{ .Values.batchPipeline.minioSecret.keys.secretKey | quote }}
+                - name: ENDPOINT_URL
+                  value: {{ .Values.batchPipeline.env.ENDPOINT_URL | quote }}
+                - name: PUSHGATEWAY_URL
+                  value: {{ .Values.batchPipeline.env.PUSHGATEWAY_URL | quote }}
+              resources:
+                {{- toYaml .Values.batchPipeline.resources | nindent 16 }}
+{{- end }}

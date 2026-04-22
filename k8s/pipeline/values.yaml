@@ -362,6 +362,46 @@ dataGenerator:
       cpu: "500m"
       memory: "512Mi"
 
+batchPipeline:
+  enabled: true
+  name: batch-pipeline
+  image:
+    repository: registry.kube-system.svc.cluster.local:5000/proj10-training
+    tag: latest
+  # Keep suspended by default; trigger manually with:
+  # kubectl -n proj10-platform create job --from=cronjob/batch-pipeline batch-pipeline-manual-$(date +%s)
+  schedule: "0 6 * * 0"
+  suspend: true
+  postgresSecret:
+    name: postgres-credentials
+    keys:
+      host: host
+      username: username
+      password: password
+      dbname: dbname
+  minioSecret:
+    name: minio-credentials
+    keys:
+      accessKey: accesskey
+      secretKey: secretkey
+  env:
+    ENDPOINT_URL: "http://minio.proj10-platform.svc.cluster.local:9000"
+    PUSHGATEWAY_URL: "http://pushgateway.proj10-platform.svc.cluster.local:9091"
+  nodeSelector:
+    workload: large
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: large
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
 airflow:
   enabled: true
   name: airflow
