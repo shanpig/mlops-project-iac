@@ -1,0 +1,185 @@
+---
+- name: Run one-off data-generator Job with runtime parameters
+  hosts: node1
+  become: yes
+  vars:
+    namespace: proj10-platform
+    job_name: ""
+
+    image_repo: registry.kube-system.svc.cluster.local:5000/proj10-gemspot-data-generator
+    image_tag: latest
+
+    # Runtime controls
+    run_seconds: "600"
+    journeys_per_sec: "2.0"
+    paused: "false"
+
+    # Connectivity/runtime env
+    generator_api_url: http://ml-api.proj10-platform.svc.cluster.local:8000
+    redis_host: redis
+    redis_port: "6379"
+
+    # DB secret wiring (proj10-platform pipeline DB)
+    postgres_secret_name: postgres-credentials
+    postgres_secret_keys:
+      host: host
+      username: username
+      password: password
+      dbname: dbname
+
+    # Scheduling/runtime placement
+    node_selector_key: workload
+    node_selector_value: large
+    toleration_key: dedicated
+    toleration_value: large
+    toleration_effect: NoSchedule
+
+    # Job behavior
+    backoff_limit: 0
+    wait_for_completion: true
+    job_timeout_seconds: 1800
+    show_logs: true
+    logs_tail_lines: 300
+    cleanup_after: false
+
+  tasks:
+    - name: Freeze effective job name for this run
+      set_fact:
+        job_name_effective: >-
+          {{
+            (job_name | default('', true) | trim | length > 0)
+            | ternary(job_name | trim, 'data-generator-adhoc-' ~ lookup('pipe', 'date +%s'))
+          }}
+
+    - name: Delete pre-existing job with same name (if any)
+      command: kubectl -n {{ namespace }} delete job {{ job_name_effective }} --ignore-not-found
+      changed_when: true
+
+    - name: Apply one-off data-generator Job
+      shell: |
+        set -euo pipefail
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: {{ job_name_effective }}
+          namespace: {{ namespace }}
+        spec:
+          backoffLimit: {{ backoff_limit | int }}
+          template:
+            spec:
+              restartPolicy: Never
+              nodeSelector:
+                {{ node_selector_key }}: {{ node_selector_value }}
+              tolerations:
+              - key: {{ toleration_key }}
+                operator: Equal
+                value: {{ toleration_value }}
+                effect: {{ toleration_effect }}
+              containers:
+              - name: data-generator
+                image: {{ image_repo }}:{{ image_tag }}
+                imagePullPolicy: IfNotPresent
+                command: ["sh", "-c"]
+                args:
+                  - |
+                    set -eu
+                    export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:5432/${PGDATABASE}"
+                    python -m data_generator.main &
+                    GEN_PID=$!
+                    sleep "${GENERATOR_RUN_SECONDS}"
+                    kill "${GEN_PID}" || true
+                    wait "${GEN_PID}" || true
+                env:
+                - name: PGHOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ postgres_secret_name }}
+                      key: {{ postgres_secret_keys.host }}
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ postgres_secret_name }}
+                      key: {{ postgres_secret_keys.username }}
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ postgres_secret_name }}
+                      key: {{ postgres_secret_keys.password }}
+                - name: PGDATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ postgres_secret_name }}
+                      key: {{ postgres_secret_keys.dbname }}
+                - name: GENERATOR_API_URL
+                  value: "{{ generator_api_url }}"
+                - name: API_BASE_URL
+                  value: "{{ generator_api_url }}"
+                - name: REDIS_HOST
+                  value: "{{ redis_host }}"
+                - name: REDIS_PORT
+                  value: "{{ redis_port }}"
+                - name: GENERATOR_JOURNEYS_PER_SEC
+                  value: "{{ journeys_per_sec }}"
+                - name: PAUSED
+                  value: "{{ paused }}"
+                - name: GENERATOR_RUN_SECONDS
+                  value: "{{ run_seconds }}"
+        EOF
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Wait for job completion (or fail fast if job fails)
+      when: wait_for_completion | bool
+      shell: |
+        set -euo pipefail
+        end=$((SECONDS + {{ job_timeout_seconds | int }}))
+        while [ $SECONDS -lt $end ]; do
+          complete="$(kubectl -n {{ namespace }} get job {{ job_name_effective }} -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' || true)"
+          failed="$(kubectl -n {{ namespace }} get job {{ job_name_effective }} -o jsonpath='{.status.failed}' || true)"
+          if [ "${complete}" = "True" ]; then
+            echo "Job completed: {{ job_name_effective }}"
+            exit 0
+          fi
+          if [ -n "${failed}" ] && [ "${failed}" != "0" ]; then
+            echo "Job failed: {{ job_name_effective }}" >&2
+            kubectl -n {{ namespace }} describe job {{ job_name_effective }} >&2 || true
+            exit 1
+          fi
+          sleep 5
+        done
+        echo "Timed out waiting for job {{ job_name_effective }} after {{ job_timeout_seconds }}s" >&2
+        kubectl -n {{ namespace }} describe job {{ job_name_effective }} >&2 || true
+        exit 1
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Show data-generator job logs
+      when: show_logs | bool
+      command: kubectl -n {{ namespace }} logs job/{{ job_name_effective }} --tail={{ logs_tail_lines | int }}
+      register: data_generator_logs
+      changed_when: false
+
+    - name: Print data-generator log excerpt
+      when: show_logs | bool
+      debug:
+        msg: |
+          Job logs (tail {{ logs_tail_lines }}):
+          {{ data_generator_logs.stdout }}
+
+    - name: Cleanup one-off job after completion
+      when:
+        - cleanup_after | bool
+        - wait_for_completion | bool
+      command: kubectl -n {{ namespace }} delete job {{ job_name_effective }} --ignore-not-found
+      changed_when: true
+
+    - name: Print follow-up commands
+      debug:
+        msg:
+          - "Created job: {{ job_name_effective }} in namespace {{ namespace }}"
+          - "Watch: kubectl -n {{ namespace }} get jobs,pods -l job-name={{ job_name_effective }} -w"
+          - "Logs:  kubectl -n {{ namespace }} logs -f job/{{ job_name_effective }}"
+          - "Delete: kubectl -n {{ namespace }} delete job {{ job_name_effective }}"
