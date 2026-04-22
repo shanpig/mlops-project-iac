@@ -41,18 +41,21 @@ spec:
             parameters:
             - name: model-version
               value: "{{workflow.parameters.model-version}}"
+          when: "'{{workflow.parameters.model-version}}' != ''"
       - - name: buildkit-build
           template: buildkit-rootless
           arguments:
             parameters:
             - name: model-version
               value: "{{workflow.parameters.model-version}}"
+          when: "'{{workflow.parameters.model-version}}' != ''"
       - - name: tag-model-staging
           template: set-mlflow-alias
           arguments:
             parameters:
             - name: model-version
               value: "{{workflow.parameters.model-version}}"
+          when: "'{{workflow.parameters.model-version}}' != ''"
       - - name: deploy-to-staging
           template: trigger-deploy
           arguments:
@@ -61,12 +64,14 @@ spec:
               value: "{{workflow.parameters.model-version}}"
             - name: environment
               value: "staging"
+          when: "'{{workflow.parameters.model-version}}' != ''"
       - - name: test-staging
           template: trigger-test
           arguments:
             parameters:
             - name: model-version
               value: "{{workflow.parameters.model-version}}"
+          when: "'{{workflow.parameters.model-version}}' != ''"
 
   - name: git-clone
     retryStrategy:

@@ -91,7 +91,7 @@ spec:
             parameters:
             - name: model-version
               value: "{{steps.register-model-version.outputs.parameters.model-version}}"
-          when: "'{{steps.register-model-version.outputs.parameters.model-version}}' != ''"
+          when: "'{{steps.register-model-version.outputs.parameters.should-trigger-downstream}}' == 'true'"
 
   # Template: Clone repo and check if rebuild is needed by comparing git commit to image label
   - name: check-and-clone
@@ -416,6 +416,9 @@ spec:
       - name: model-version
         valueFrom:
           path: /tmp/model-version.txt
+      - name: should-trigger-downstream
+        valueFrom:
+          path: /tmp/should-trigger-downstream.txt
     script:
       image: python:3.11-slim
       command: [sh, -c]
@@ -430,7 +433,9 @@ spec:
         from mlflow.tracking import MlflowClient
 
         out = Path("/tmp/model-version.txt")
+        gate = Path("/tmp/should-trigger-downstream.txt")
         out.write_text("", encoding="utf-8")
+        gate.write_text("false", encoding="utf-8")
 
         client = MlflowClient()
         exp = client.get_experiment_by_name("GemSpot-Retrain")
@@ -460,6 +465,7 @@ spec:
         version = str(mv.version)
         print(f"Registered new model version: {version}")
         out.write_text(version, encoding="utf-8")
+        gate.write_text("true", encoding="utf-8")
         PY
 
   - name: trigger-build-container-image
