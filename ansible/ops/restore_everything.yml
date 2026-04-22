@@ -102,8 +102,10 @@
         test -f "$DUMP"
         POD="$(kubectl -n "$NS" get pod -l {{ postgres_pod_label }} -o jsonpath='{.items[0].metadata.name}')"
         PW="$(kubectl -n "$NS" get secret {{ postgres_secret_name }} -o jsonpath='{.data.{{ postgres_secret_key }}}' | base64 -d)"
-        cat "$DUMP" | kubectl -n "$NS" exec -i "$POD" -- sh -lc \
-          "PGPASSWORD='$PW' pg_restore -U '{{ postgres_user }}' -d '{{ postgres_db }}' --clean --if-exists --no-owner --no-privileges"
+        REMOTE_DUMP="/tmp/${NS}_database.dump"
+        kubectl -n "$NS" cp "$DUMP" "$POD:$REMOTE_DUMP"
+        kubectl -n "$NS" exec "$POD" -- sh -lc \
+          "PGPASSWORD='$PW' pg_restore -U '{{ postgres_user }}' -d '{{ postgres_db }}' --clean --if-exists --no-owner --no-privileges \"$REMOTE_DUMP\" && rm -f \"$REMOTE_DUMP\""
       args:
         executable: /bin/bash
       loop: "{{ db_namespaces }}"
