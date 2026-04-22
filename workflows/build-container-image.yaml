@@ -132,18 +132,45 @@ spec:
           export MODEL_VERSION='{{inputs.parameters.model-version}}'
           python - <<'PY'
           import os
+          import shutil
           import sys
           from mlflow.tracking import MlflowClient
 
           NAME = "proj10AdventureLogModel"
           VERSION = os.environ["MODEL_VERSION"]
+          ARTIFACT_PATH = "exported_models/xgboost_v2.joblib"
+          TARGET_PATH = "/mnt/workspace/ml-serving/models/gemspot_xgb.joblib"
 
           client = MlflowClient()
           mv = client.get_model_version(NAME, VERSION)
+          local_artifact = client.download_artifacts(mv.run_id, ARTIFACT_PATH)
+
+          os.makedirs(os.path.dirname(TARGET_PATH), exist_ok=True)
+          shutil.copyfile(local_artifact, TARGET_PATH)
+
+          dockerfile_path = "/mnt/workspace/ml-serving/Dockerfile"
+          with open(dockerfile_path, "r", encoding="utf-8") as f:
+              dockerfile = f.read()
+
+          bake_snippet = (
+              "RUN mkdir -p /models \\\n"
+              "    && if [ -f /opt/gemspot/models/gemspot_xgb.joblib ]; then \\\n"
+              "         cp /opt/gemspot/models/gemspot_xgb.joblib /models/gemspot_xgb.joblib; \\\n"
+              "       fi"
+          )
+          anchor = "COPY . ."
+          if bake_snippet not in dockerfile:
+              if anchor not in dockerfile:
+                  raise RuntimeError("Could not find 'COPY . .' in ml-serving Dockerfile")
+              dockerfile = dockerfile.replace(anchor, f"{anchor}\n\n{bake_snippet}", 1)
+              with open(dockerfile_path, "w", encoding="utf-8") as f:
+                  f.write(dockerfile)
 
           print(f"Model version: {VERSION}", file=sys.stderr)
           print(f"Model source: {mv.source}", file=sys.stderr)
-          print(f"Validated registered model version exists: {VERSION}", file=sys.stderr)
+          print(f"Model artifact run_id: {mv.run_id}", file=sys.stderr)
+          print(f"Downloaded artifact to: {TARGET_PATH}", file=sys.stderr)
+          print(f"Patched Dockerfile for model bake-in: {dockerfile_path}", file=sys.stderr)
           PY
       volumeMounts:
       - name: workdir
