@@ -42,6 +42,9 @@ spec:
   volumes:
   - name: buildkitd
     emptyDir: {}
+  - name: source-cache
+    persistentVolumeClaim:
+      claimName: argo-source-cache-pvc
 
   templates:
   - name: training-and-build
@@ -144,7 +147,7 @@ spec:
 
           # Ensure output parameter files always exist, even on early failure.
           ensure_outputs() {
-            [ -f "$OUT_NEEDS" ] || echo "true" > "$OUT_NEEDS"
+            [ -f "$OUT_NEEDS" ] || echo "false" > "$OUT_NEEDS"
             [ -f "$OUT_GIT" ] || echo "unknown" > "$OUT_GIT"
             [ -f "$OUT_BATCH" ] || echo "unknown" > "$OUT_BATCH"
           }
@@ -154,22 +157,53 @@ spec:
           # Argo PVC mount may contain leftover files; ensure clean clone target.
           find /mnt/workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 
+          HAVE_CACHE="false"
+          if [ -f /source-cache/GemSpot_training/requirements.txt ] && [ -d /source-cache/gemspot/batch_pipeline ]; then
+            HAVE_CACHE="true"
+          fi
+
+          if [ "$HAVE_CACHE" = "true" ]; then
+            echo "Using cached repositories from /source-cache"
+            cp -R /source-cache/GemSpot_training/. /mnt/workspace/
+            rm -rf /tmp/gemspot-batch
+            mkdir -p /tmp/gemspot-batch
+            cp -R /source-cache/gemspot/. /tmp/gemspot-batch/
+          fi
+
           TRAINING_URL="{{inputs.parameters.training-repo-url}}"
           BATCH_URL="{{inputs.parameters.batch-repo-url}}"
           if [ -n "${GITHUB_USERNAME:-}" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
             TRAINING_URL=$(echo "$TRAINING_URL" | sed "s#https://github.com/#https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/#")
             BATCH_URL=$(echo "$BATCH_URL" | sed "s#https://github.com/#https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/#")
           fi
-          
-          # Clone the repository
-          git clone --depth 1 --filter=blob:none --no-tags --single-branch \
-            --branch "{{inputs.parameters.branch}}" \
-            "$TRAINING_URL" .
 
-          # Clone batch/data repo content required by combined retraining image.
-          rm -rf /tmp/gemspot-batch
-          git clone --depth 1 --filter=blob:none --no-tags --single-branch \
-            "$BATCH_URL" /tmp/gemspot-batch
+          if [ "$HAVE_CACHE" != "true" ]; then
+            # Clone the repositories only when cache is not available.
+            if ! git clone --depth 1 --filter=blob:none --no-tags --single-branch \
+              --branch "{{inputs.parameters.branch}}" \
+              "$TRAINING_URL" .; then
+              echo "WARN: could not clone training repo (network/DNS issue)."
+              echo "WARN: fallback to existing proj10-training:latest (skip rebuild)."
+              echo "false" > "$OUT_NEEDS"
+              exit 0
+            fi
+
+            rm -rf /tmp/gemspot-batch
+            if ! git clone --depth 1 --filter=blob:none --no-tags --single-branch \
+              "$BATCH_URL" /tmp/gemspot-batch; then
+              echo "WARN: could not clone batch repo (network/DNS issue)."
+              echo "WARN: fallback to existing proj10-training:latest (skip rebuild)."
+              echo "false" > "$OUT_NEEDS"
+              exit 0
+            fi
+
+            # Refresh cache after successful clone (best effort).
+            mkdir -p /source-cache/GemSpot_training /source-cache/gemspot
+            rm -rf /source-cache/GemSpot_training/* /source-cache/gemspot/*
+            cp -R /mnt/workspace/. /source-cache/GemSpot_training/ || true
+            cp -R /tmp/gemspot-batch/. /source-cache/gemspot/ || true
+          fi
+
           mkdir -p /mnt/workspace/gemspot
           cp -R /tmp/gemspot-batch/batch_pipeline /mnt/workspace/gemspot/
 
@@ -194,8 +228,16 @@ spec:
           EOF
           
           # Get current git commit (short SHA used as immutable image tag)
-          GIT_COMMIT=$(git rev-parse --short=12 HEAD)
-          BATCH_COMMIT=$(git -C /tmp/gemspot-batch rev-parse --short=12 HEAD)
+          if git rev-parse --short=12 HEAD >/dev/null 2>&1; then
+            GIT_COMMIT=$(git rev-parse --short=12 HEAD)
+          else
+            GIT_COMMIT="cached-$(date +%Y%m%d%H%M%S)"
+          fi
+          if git -C /tmp/gemspot-batch rev-parse --short=12 HEAD >/dev/null 2>&1; then
+            BATCH_COMMIT=$(git -C /tmp/gemspot-batch rev-parse --short=12 HEAD)
+          else
+            BATCH_COMMIT="cached-$(date +%Y%m%d%H%M%S)"
+          fi
           echo "Current git commit: $GIT_COMMIT"
           echo "Current batch git commit: $BATCH_COMMIT"
           
@@ -210,6 +252,8 @@ spec:
       volumeMounts:
       - name: workdir
         mountPath: /mnt/workspace
+      - name: source-cache
+        mountPath: /source-cache
 
   # Template: Build training container image using buildkit
   - name: buildkit-rootless

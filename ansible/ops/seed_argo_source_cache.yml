@@ -1,0 +1,165 @@
+---
+- name: Seed Argo source cache PVC from local repos
+  hosts: node1
+  become: yes
+  vars:
+    argo_namespace: argo
+    cache_pvc_name: argo-source-cache-pvc
+    seeder_pod_name: argo-source-cache-seeder
+    remote_stage_dir: /tmp/argo-source-cache
+
+    # Defaults assume repo layout:
+    # /.../mlops/iac
+    # /.../mlops/model-training
+    # /.../mlops/model-data
+    local_workspace_root: "{{ playbook_dir }}/../../.."
+    local_training_repo: "{{ local_workspace_root }}/model-training"
+    local_batch_repo: "{{ local_workspace_root }}/model-data"
+
+  tasks:
+    - name: Validate local training repo exists
+      delegate_to: localhost
+      become: false
+      stat:
+        path: "{{ local_training_repo }}"
+      register: local_training_repo_stat
+
+    - name: Validate local batch repo exists
+      delegate_to: localhost
+      become: false
+      stat:
+        path: "{{ local_batch_repo }}"
+      register: local_batch_repo_stat
+
+    - name: Fail when local repos are missing
+      delegate_to: localhost
+      become: false
+      fail:
+        msg: >-
+          Missing local source repos. Expected:
+          {{ local_training_repo }} and {{ local_batch_repo }}
+      when: not local_training_repo_stat.stat.exists or not local_batch_repo_stat.stat.exists
+
+    - name: Create local temporary cache bundle directory
+      delegate_to: localhost
+      become: false
+      tempfile:
+        state: directory
+        prefix: argo-source-cache-
+      register: local_tmp_dir
+
+    - name: Create training source tarball (controller)
+      delegate_to: localhost
+      become: false
+      command: >
+        tar -C {{ local_training_repo }} --exclude=.git -czf {{ local_tmp_dir.path }}/GemSpot_training.tgz .
+
+    - name: Create batch source tarball (controller)
+      delegate_to: localhost
+      become: false
+      command: >
+        tar -C {{ local_batch_repo }} --exclude=.git -czf {{ local_tmp_dir.path }}/gemspot.tgz .
+
+    - name: Ensure remote staging directory exists
+      file:
+        path: "{{ remote_stage_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy training source tarball to node1
+      copy:
+        src: "{{ local_tmp_dir.path }}/GemSpot_training.tgz"
+        dest: "{{ remote_stage_dir }}/GemSpot_training.tgz"
+        mode: "0644"
+
+    - name: Copy batch source tarball to node1
+      copy:
+        src: "{{ local_tmp_dir.path }}/gemspot.tgz"
+        dest: "{{ remote_stage_dir }}/gemspot.tgz"
+        mode: "0644"
+
+    - name: Ensure source cache PVC exists
+      shell: |
+        set -euo pipefail
+        kubectl -n {{ argo_namespace }} get pvc {{ cache_pvc_name }} >/dev/null 2>&1 || \
+        kubectl apply -f - <<'EOF'
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: {{ cache_pvc_name }}
+          namespace: {{ argo_namespace }}
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi
+        EOF
+      args:
+        executable: /bin/bash
+
+    - name: Delete previous seeder pod if present
+      command: kubectl -n {{ argo_namespace }} delete pod {{ seeder_pod_name }} --ignore-not-found
+
+    - name: Create seeder pod mounting source cache PVC
+      shell: |
+        set -euo pipefail
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: {{ seeder_pod_name }}
+          namespace: {{ argo_namespace }}
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: seeder
+            image: alpine:3.19
+            command: ["sh","-c","sleep 3600"]
+            volumeMounts:
+            - name: cache
+              mountPath: /cache
+          volumes:
+          - name: cache
+            persistentVolumeClaim:
+              claimName: {{ cache_pvc_name }}
+        EOF
+      args:
+        executable: /bin/bash
+
+    - name: Wait for seeder pod to be ready
+      command: kubectl -n {{ argo_namespace }} wait --for=condition=Ready pod/{{ seeder_pod_name }} --timeout=120s
+
+    - name: Copy source tarballs into seeder pod
+      shell: |
+        set -euo pipefail
+        kubectl -n {{ argo_namespace }} cp {{ remote_stage_dir }}/GemSpot_training.tgz {{ seeder_pod_name }}:/tmp/GemSpot_training.tgz
+        kubectl -n {{ argo_namespace }} cp {{ remote_stage_dir }}/gemspot.tgz {{ seeder_pod_name }}:/tmp/gemspot.tgz
+      args:
+        executable: /bin/bash
+
+    - name: Extract source tarballs into cache PVC
+      shell: |
+        set -euo pipefail
+        kubectl -n {{ argo_namespace }} exec {{ seeder_pod_name }} -- sh -lc '
+          rm -rf /cache/GemSpot_training /cache/gemspot
+          mkdir -p /cache/GemSpot_training /cache/gemspot
+          tar -xzf /tmp/GemSpot_training.tgz -C /cache/GemSpot_training
+          tar -xzf /tmp/gemspot.tgz -C /cache/gemspot
+          test -f /cache/GemSpot_training/requirements.txt
+          test -d /cache/gemspot/batch_pipeline
+          ls -la /cache/GemSpot_training | head -n 20
+          ls -la /cache/gemspot | head -n 20
+        '
+      args:
+        executable: /bin/bash
+
+    - name: Delete seeder pod
+      command: kubectl -n {{ argo_namespace }} delete pod {{ seeder_pod_name }} --ignore-not-found
+
+    - name: Remove local temporary bundle directory
+      delegate_to: localhost
+      become: false
+      file:
+        path: "{{ local_tmp_dir.path }}"
+        state: absent

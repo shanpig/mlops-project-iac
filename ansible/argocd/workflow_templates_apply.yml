@@ -25,6 +25,7 @@
         - accesskey
         - secretkey
     templates:
+      - argo-source-cache-pvc.yaml
       - build-container-image.yaml
       - deploy-container-image.yaml
       - promote-model.yaml
