@@ -33,6 +33,13 @@ Capture screenshots:
 2. Grafana dashboard list with `batch_pipeline`, `etl`, and `live_data`.
 3. One active dashboard panel showing recent metrics.
 
+If ETL panels are empty on a restored cluster, run one-shot ETL metric backfill:
+
+```bash
+cd /Users/shanpig/Desktop/projects/nyu/mlops/iac/ansible
+ansible-playbook -i inventory.yml ops/run_etl_metrics_backfill_once.yml --ask-vault-pass
+```
+
 ## 3) Alerting evidence (degradation + alert fired)
 
 Trigger a controlled failure:
