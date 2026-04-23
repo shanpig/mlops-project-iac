@@ -112,6 +112,13 @@
           namespace: {{ argo_namespace }}
         spec:
           restartPolicy: Never
+          nodeSelector:
+            workload: large
+          tolerations:
+          - key: dedicated
+            operator: Equal
+            value: large
+            effect: NoSchedule
           containers:
           - name: seeder
             image: alpine:3.19
