@@ -335,8 +335,8 @@ dataGenerator:
   image:
     repository: registry.kube-system.svc.cluster.local:5000/proj10-gemspot-data-generator
     tag: latest
-  schedule: "*/30 * * * *"
-  suspend: true
+  schedule: "*/60 * * * *"
+  suspend: false
   runSeconds: "300"
   postgresSecret:
     name: postgres-credentials
@@ -383,7 +383,7 @@ batchPipeline:
   # Keep suspended by default; trigger manually with:
   # kubectl -n proj10-platform create job --from=cronjob/batch-pipeline batch-pipeline-manual-$(date +%s)
   schedule: "0 0 * * *"
-  suspend: true
+  suspend: false
   postgresSecret:
     name: postgres-credentials
     keys:
