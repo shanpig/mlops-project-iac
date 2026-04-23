@@ -118,7 +118,7 @@ spec:
         duration: "10s"
         factor: "2"
     container:
-      image: alpine:3.19
+      image: alpine/git:v2.26.2
       workingDir: /mnt/workspace
       command: [sh, -c]
       env:
@@ -151,9 +151,6 @@ spec:
           trap ensure_outputs EXIT
           ensure_outputs
           
-          # Install git and curl
-          apk add --no-cache git curl jq > /dev/null 2>&1
-
           # Argo PVC mount may contain leftover files; ensure clean clone target.
           find /mnt/workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 
@@ -202,57 +199,14 @@ spec:
           echo "Current git commit: $GIT_COMMIT"
           echo "Current batch git commit: $BATCH_COMMIT"
           
-          # Try to get the commit label from the existing image in registry
-          REGISTRY="registry.kube-system.svc.cluster.local:5000"
-          IMAGE_COMMIT=""
-          IMAGE_BATCH_COMMIT=""
-          IMAGE_FLAVOR=""
-          
-          # Query registry for image manifest and config to get labels
-          # First get the manifest to find the config digest
-          MANIFEST=$(curl -sf "http://${REGISTRY}/v2/proj10-training/manifests/latest" \
-            -H "Accept: application/vnd.docker.distribution.manifest.v2+json" 2>/dev/null || echo "")
-          
-          if [ -n "$MANIFEST" ]; then
-            CONFIG_DIGEST=$(echo "$MANIFEST" | jq -r '.config.digest // empty' 2>/dev/null || echo "")
-            if [ -n "$CONFIG_DIGEST" ]; then
-              # Get the config blob which contains labels
-              CONFIG=$(curl -sf "http://${REGISTRY}/v2/proj10-training/blobs/${CONFIG_DIGEST}" 2>/dev/null || echo "")
-              if [ -n "$CONFIG" ]; then
-                IMAGE_COMMIT=$(echo "$CONFIG" | jq -r '.config.Labels["git.commit"] // empty' 2>/dev/null || echo "")
-                IMAGE_BATCH_COMMIT=$(echo "$CONFIG" | jq -r '.config.Labels["batch.commit"] // empty' 2>/dev/null || echo "")
-                IMAGE_FLAVOR=$(echo "$CONFIG" | jq -r '.config.Labels["build.flavor"] // empty' 2>/dev/null || echo "")
-              fi
-            fi
-          fi
-          
-          echo "Image git commit label: ${IMAGE_COMMIT:-<not found>}"
-          echo "Image batch git commit label: ${IMAGE_BATCH_COMMIT:-<not found>}"
-          echo "Image build flavor label: ${IMAGE_FLAVOR:-<not found>}"
-          
           # Update output parameters with resolved commit SHAs
           echo "$GIT_COMMIT" > "$OUT_GIT"
           echo "$BATCH_COMMIT" > "$OUT_BATCH"
           
-          # Determine if rebuild is needed
-          # Always rebuild for non-default branches
-          BRANCH="{{inputs.parameters.branch}}"
-          if [ "$BRANCH" != "main" ]; then
-            echo "Rebuild needed: non-default branch '$BRANCH' specified"
-            echo "true" > "$OUT_NEEDS"
-          elif [ "${IMAGE_FLAVOR}" != "combined-v2" ]; then
-            echo "Rebuild needed: image is missing required combined build flavor"
-            echo "true" > "$OUT_NEEDS"
-          elif [ -z "$IMAGE_COMMIT" ] || [ "$IMAGE_COMMIT" != "$GIT_COMMIT" ]; then
-            echo "Rebuild needed: code has changed or image not found"
-            echo "true" > "$OUT_NEEDS"
-          elif [ -z "$IMAGE_BATCH_COMMIT" ] || [ "$IMAGE_BATCH_COMMIT" != "$BATCH_COMMIT" ]; then
-            echo "Rebuild needed: batch/data repo has changed or image is missing batch commit label"
-            echo "true" > "$OUT_NEEDS"
-          else
-            echo "No rebuild needed: image is up to date"
-            echo "false" > "$OUT_NEEDS"
-          fi
+          # Deterministic policy: always rebuild training image from freshly-cloned repos.
+          # This avoids fragile runtime dependency on registry metadata queries.
+          echo "Rebuild needed: deterministic rebuild policy enabled"
+          echo "true" > "$OUT_NEEDS"
       volumeMounts:
       - name: workdir
         mountPath: /mnt/workspace
