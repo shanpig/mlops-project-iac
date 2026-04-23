@@ -81,6 +81,7 @@ function render_secrets_from_templates {
         PLATFORM_POSTGRES_USERNAME
         PLATFORM_POSTGRES_PASSWORD
         PLATFORM_POSTGRES_DBNAME
+        NIMTABLE_POSTGRES_DBNAME
         AIRFLOW_ADMIN_USERNAME
         AIRFLOW_ADMIN_PASSWORD
         AIRFLOW_ADMIN_FIRSTNAME
@@ -112,6 +113,12 @@ function render_secrets_from_templates {
         platform_postgres_host="proj10-postgres.proj10-staging.svc.cluster.local"
         echo "PLATFORM_POSTGRES_HOST is empty or set to 'postgres'. Falling back to ${platform_postgres_host} for secret rendering."
     fi
+    local nimtable_postgres_dbname
+    nimtable_postgres_dbname="$(get_env NIMTABLE_POSTGRES_DBNAME)"
+    if [ -z "$nimtable_postgres_dbname" ]; then
+        nimtable_postgres_dbname="nimtable_catalog"
+        echo "NIMTABLE_POSTGRES_DBNAME is empty. Falling back to ${nimtable_postgres_dbname} for Nimtable secret rendering."
+    fi
 
     for template in "$SECRETS_TEMPLATE_DIR"/*.yaml.template; do
         [ -e "$template" ] || continue
@@ -125,6 +132,8 @@ function render_secrets_from_templates {
             local escaped
             if [ "$key" = "PLATFORM_POSTGRES_HOST" ]; then
                 value="$platform_postgres_host"
+            elif [ "$key" = "NIMTABLE_POSTGRES_DBNAME" ]; then
+                value="$nimtable_postgres_dbname"
             else
                 value="$(get_env "$key")"
             fi

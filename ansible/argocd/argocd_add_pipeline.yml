@@ -100,10 +100,29 @@
         --sync-policy automated --self-heal \
         --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}
 
-    - name: Sync ArgoCD app
+    - name: Best-effort terminate any stale in-progress operation
       command: >
-        argocd app sync {{ app_name }} \
+        argocd app terminate-op {{ app_name }} \
         --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}
+      register: terminate_op_before_sync
+      failed_when: false
+      changed_when: terminate_op_before_sync.rc == 0
+
+    - name: Sync ArgoCD app with retry for transient lock/port-forward errors
+      shell: |
+        set -euo pipefail
+        for attempt in 1 2 3 4 5 6; do
+          if argocd app sync {{ app_name }} --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}; then
+            exit 0
+          fi
+          rc=$?
+          echo "argocd app sync failed (attempt=${attempt}, rc=${rc}); trying to clear lock and retry..." >&2
+          argocd app terminate-op {{ app_name }} --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }} || true
+          sleep $((attempt * 5))
+        done
+        exit 1
+      args:
+        executable: /bin/bash
       changed_when: false
 
     - name: Display ArgoCD app status
