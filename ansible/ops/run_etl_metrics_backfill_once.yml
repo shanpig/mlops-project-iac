@@ -1,0 +1,233 @@
+---
+- name: Run one-off ETL metrics backfill Job
+  hosts: node1
+  become: yes
+  vars:
+    namespace: proj10-platform
+    job_name: ""
+    configmap_name: etl-metrics-backfill-script
+
+    image_repo: registry.kube-system.svc.cluster.local:5000/proj10-gemspot-etl-job
+    image_tag: latest
+
+    # Local path on controller machine (where ansible-playbook is executed)
+    backfill_script_path: "{{ playbook_dir }}/../../../model-data/backfill_etl_metrics.py"
+
+    # Secret wiring
+    postgres_secret_name: postgres-credentials
+    postgres_secret_keys:
+      host: host
+      username: username
+      password: password
+      dbname: dbname
+    minio_secret_name: minio-credentials
+    minio_secret_keys:
+      accesskey: accesskey
+      secretkey: secretkey
+
+    # Runtime env
+    pushgateway_url: http://pushgateway.proj10-platform.svc.cluster.local:9091
+    endpoint_url: http://minio.proj10-platform.svc.cluster.local:9000
+
+    # Scheduling/runtime placement
+    node_selector_key: workload
+    node_selector_value: large
+    toleration_key: dedicated
+    toleration_value: large
+    toleration_effect: NoSchedule
+
+    # Job behavior
+    backoff_limit: 0
+    wait_for_completion: true
+    job_timeout_seconds: 1800
+    show_logs: true
+    logs_tail_lines: 400
+    cleanup_after: false
+    verify_pushgateway: true
+    verify_timeout_seconds: 120
+
+  tasks:
+    - name: Load backfill script from local workspace
+      set_fact:
+        backfill_script_content: "{{ lookup('file', backfill_script_path) }}"
+
+    - name: Freeze effective job name for this run
+      set_fact:
+        job_name_effective: >-
+          {{
+            (job_name | default('', true) | trim | length > 0)
+            | ternary(job_name | trim, 'etl-metrics-backfill-' ~ lookup('pipe', 'date +%s'))
+          }}
+
+    - name: Create or update backfill script ConfigMap
+      shell: |
+        set -euo pipefail
+        TMP_SCRIPT="/tmp/backfill_etl_metrics.py"
+        cat > "${TMP_SCRIPT}" <<'PYEOF'
+        {{ backfill_script_content }}
+        PYEOF
+        kubectl -n {{ namespace }} create configmap {{ configmap_name }} \
+          --from-file=backfill_etl_metrics.py="${TMP_SCRIPT}" \
+          --dry-run=client -o yaml | kubectl apply -f -
+        rm -f "${TMP_SCRIPT}"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Delete pre-existing job with same name (if any)
+      command: kubectl -n {{ namespace }} delete job {{ job_name_effective }} --ignore-not-found
+      changed_when: true
+
+    - name: Apply one-off ETL metrics backfill Job
+      shell: |
+        set -euo pipefail
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: {{ job_name_effective }}
+          namespace: {{ namespace }}
+        spec:
+          backoffLimit: {{ backoff_limit | int }}
+          template:
+            spec:
+              restartPolicy: Never
+              nodeSelector:
+                {{ node_selector_key }}: {{ node_selector_value }}
+              tolerations:
+              - key: {{ toleration_key }}
+                operator: Equal
+                value: {{ toleration_value }}
+                effect: {{ toleration_effect }}
+              containers:
+              - name: etl-metrics-backfill
+                image: {{ image_repo }}:{{ image_tag }}
+                imagePullPolicy: IfNotPresent
+                command: ["sh", "-c"]
+                args:
+                  - |
+                    set -eu
+                    export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:5432/${PGDATABASE}"
+                    python /app/backfill_etl_metrics.py
+                env:
+                - name: PGHOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ postgres_secret_name }}
+                      key: {{ postgres_secret_keys.host }}
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ postgres_secret_name }}
+                      key: {{ postgres_secret_keys.username }}
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ postgres_secret_name }}
+                      key: {{ postgres_secret_keys.password }}
+                - name: PGDATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ postgres_secret_name }}
+                      key: {{ postgres_secret_keys.dbname }}
+                - name: PUSHGATEWAY_URL
+                  value: "{{ pushgateway_url }}"
+                - name: ENDPOINT_URL
+                  value: "{{ endpoint_url }}"
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ minio_secret_name }}
+                      key: {{ minio_secret_keys.accesskey }}
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ minio_secret_name }}
+                      key: {{ minio_secret_keys.secretkey }}
+                volumeMounts:
+                - name: backfill-script
+                  mountPath: /app/backfill_etl_metrics.py
+                  subPath: backfill_etl_metrics.py
+              volumes:
+              - name: backfill-script
+                configMap:
+                  name: {{ configmap_name }}
+        EOF
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Wait for job completion (or fail fast if job fails)
+      when: wait_for_completion | bool
+      shell: |
+        set -euo pipefail
+        end=$((SECONDS + {{ job_timeout_seconds | int }}))
+        while [ $SECONDS -lt $end ]; do
+          complete="$(kubectl -n {{ namespace }} get job {{ job_name_effective }} -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' || true)"
+          failed="$(kubectl -n {{ namespace }} get job {{ job_name_effective }} -o jsonpath='{.status.failed}' || true)"
+          if [ "${complete}" = "True" ]; then
+            echo "Job completed: {{ job_name_effective }}"
+            exit 0
+          fi
+          if [ -n "${failed}" ] && [ "${failed}" != "0" ]; then
+            echo "Job failed: {{ job_name_effective }}" >&2
+            kubectl -n {{ namespace }} describe job {{ job_name_effective }} >&2 || true
+            exit 1
+          fi
+          sleep 5
+        done
+        echo "Timed out waiting for job {{ job_name_effective }} after {{ job_timeout_seconds }}s" >&2
+        kubectl -n {{ namespace }} describe job {{ job_name_effective }} >&2 || true
+        exit 1
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Show ETL backfill job logs
+      when: show_logs | bool
+      command: kubectl -n {{ namespace }} logs job/{{ job_name_effective }} --tail={{ logs_tail_lines | int }}
+      register: etl_backfill_logs
+      changed_when: false
+
+    - name: Print ETL backfill log excerpt
+      when: show_logs | bool
+      debug:
+        msg: |
+          Job logs (tail {{ logs_tail_lines }}):
+          {{ etl_backfill_logs.stdout }}
+
+    - name: Verify Pushgateway contains ETL metrics
+      when: verify_pushgateway | bool
+      shell: |
+        set -euo pipefail
+        CHECK_POD="pushgw-check-{{ lookup('pipe', 'date +%s') }}"
+        end=$((SECONDS + {{ verify_timeout_seconds | int }}))
+        while [ $SECONDS -lt $end ]; do
+          if kubectl -n {{ namespace }} run "${CHECK_POD}" --rm -i --restart=Never --image=curlimages/curl -- \
+            sh -lc 'curl -fsS {{ pushgateway_url }}/metrics | grep -q "^etl_total_locations"'; then
+            echo "Found ETL metric etl_total_locations in Pushgateway"
+            exit 0
+          fi
+          sleep 5
+        done
+        echo "Did not find etl_total_locations in Pushgateway within timeout" >&2
+        exit 1
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Cleanup one-off job after completion
+      when:
+        - cleanup_after | bool
+        - wait_for_completion | bool
+      command: kubectl -n {{ namespace }} delete job {{ job_name_effective }} --ignore-not-found
+      changed_when: true
+
+    - name: Print follow-up commands
+      debug:
+        msg:
+          - "Created job: {{ job_name_effective }} in namespace {{ namespace }}"
+          - "Watch: kubectl -n {{ namespace }} get jobs,pods -l job-name={{ job_name_effective }} -w"
+          - "Logs:  kubectl -n {{ namespace }} logs -f job/{{ job_name_effective }}"
+          - "Pushgateway check: kubectl -n {{ namespace }} run pgw-check --rm -it --restart=Never --image=curlimages/curl -- sh -lc 'curl -s {{ pushgateway_url }}/metrics | grep etl_'"
+          - "Delete: kubectl -n {{ namespace }} delete job {{ job_name_effective }}"
