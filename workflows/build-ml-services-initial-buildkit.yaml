@@ -173,6 +173,32 @@ spec:
           fi
           git clone --depth 1 --branch "{{workflow.parameters.app-branch}}" "$APP_URL" /mnt/workspace/app
           git clone --depth 1 --branch "{{workflow.parameters.data-branch}}" "$DATA_URL" /mnt/workspace/data
+
+          # Build an offline-ready stream consumer image by preloading
+          # sentence-transformers cache at image build time.
+          cat > /mnt/workspace/data/stream_consumer/Dockerfile.offline <<'EOF'
+          FROM python:3.11-slim
+
+          WORKDIR /app
+          ENV PYTHONDONTWRITEBYTECODE=1
+          ENV PYTHONUNBUFFERED=1
+          ENV HF_HOME=/app/.cache/huggingface
+          ENV SENTENCE_TRANSFORMERS_HOME=/app/.cache/sentence_transformers
+
+          COPY requirements.txt .
+          RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+              pip install --no-cache-dir -r requirements.txt
+
+          COPY *.py ./
+
+          RUN python - <<'PY'
+          from sentence_transformers import SentenceTransformer
+          SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+          print("Preloaded sentence-transformers model cache")
+          PY
+
+          CMD ["python", "main.py"]
+          EOF
       volumeMounts:
       - name: workdir
         mountPath: /mnt/workspace
@@ -372,6 +398,8 @@ spec:
         - context=/mnt/workspace/data/stream_consumer
         - --local
         - dockerfile=/mnt/workspace/data/stream_consumer
+        - --opt
+        - filename=Dockerfile.offline
         - --output
         - type=image,name=registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-consumer:{{inputs.parameters.image-tag}},push=true,registry.insecure=true
         - --export-cache

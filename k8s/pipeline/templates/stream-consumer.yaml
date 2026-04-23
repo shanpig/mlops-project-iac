@@ -25,7 +25,7 @@ spec:
       containers:
         - name: stream-consumer
           image: {{ .Values.streamConsumer.image.repository }}:{{ .Values.streamConsumer.image.tag }}
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: {{ .Values.streamConsumer.image.pullPolicy | default "IfNotPresent" }}
           command: ["sh", "-c"]
           args:
             - |
@@ -80,6 +80,12 @@ spec:
               value: {{ .Values.streamConsumer.env.LOG_LEVEL | quote }}
             - name: PROMETHEUS_METRICS_PORT
               value: {{ .Values.streamConsumer.env.PROMETHEUS_METRICS_PORT | quote }}
+            - name: HF_HUB_OFFLINE
+              value: {{ .Values.streamConsumer.env.HF_HUB_OFFLINE | quote }}
+            - name: TRANSFORMERS_OFFLINE
+              value: {{ .Values.streamConsumer.env.TRANSFORMERS_OFFLINE | quote }}
+            - name: SENTENCE_TRANSFORMERS_HOME
+              value: {{ .Values.streamConsumer.env.SENTENCE_TRANSFORMERS_HOME | quote }}
           {{- if .Values.streamConsumer.metrics.enabled }}
           ports:
             - name: metrics

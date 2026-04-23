@@ -75,6 +75,7 @@ streamConsumer:
   image:
     repository: registry.kube-system.svc.cluster.local:5000/proj10-gemspot-ml-consumer
     tag: latest
+    pullPolicy: Always
   postgresSecret:
     name: postgres-credentials
     keys:
@@ -97,6 +98,9 @@ streamConsumer:
     ENDPOINT_URL: "http://minio.proj10-platform.svc.cluster.local:9000"
     LOG_LEVEL: "INFO"
     PROMETHEUS_METRICS_PORT: "9100"
+    HF_HUB_OFFLINE: "1"
+    TRANSFORMERS_OFFLINE: "1"
+    SENTENCE_TRANSFORMERS_HOME: "/app/.cache/sentence_transformers"
   metrics:
     enabled: true
     serviceName: stream-consumer-metrics
