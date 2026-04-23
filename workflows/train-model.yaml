@@ -104,13 +104,13 @@ spec:
       parameters:
       - name: needs-rebuild
         valueFrom:
-          path: /tmp/needs-rebuild.txt
+          path: needs-rebuild.txt
       - name: git-commit
         valueFrom:
-          path: /tmp/git-commit.txt
+          path: git-commit.txt
       - name: batch-commit
         valueFrom:
-          path: /tmp/batch-commit.txt
+          path: batch-commit.txt
     retryStrategy:
       limit: "5"
       retryPolicy: "Always"
@@ -138,9 +138,9 @@ spec:
         - |
           set -eu
 
-          OUT_NEEDS="/tmp/needs-rebuild.txt"
-          OUT_GIT="/tmp/git-commit.txt"
-          OUT_BATCH="/tmp/batch-commit.txt"
+          OUT_NEEDS="needs-rebuild.txt"
+          OUT_GIT="git-commit.txt"
+          OUT_BATCH="batch-commit.txt"
 
           # Ensure output parameter files always exist, even on early failure.
           ensure_outputs() {
