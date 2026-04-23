@@ -2,6 +2,8 @@
   hosts: node1
   become: yes
   vars:
+    use_local_repo: true
+    local_repo_root: "{{ playbook_dir }}/../.."
     repo_url: https://github.com/shanpig/mlops-project-iac.git
     repo_dest: /tmp/proj10-iac
     workflow_file: workflows/build-ml-services-initial-buildkit.yaml
@@ -30,7 +32,21 @@
       }}
 
   tasks:
+    - name: Ensure remote workflow staging directory exists
+      file:
+        path: "{{ repo_dest }}/workflows"
+        state: directory
+        mode: "0755"
+
+    - name: Copy workflow manifest from local repo checkout
+      when: use_local_repo | bool
+      copy:
+        src: "{{ local_repo_root }}/{{ workflow_file }}"
+        dest: "{{ repo_dest }}/{{ workflow_file }}"
+        mode: "0644"
+
     - name: Clone or update proj10-iac repo
+      when: not (use_local_repo | bool)
       git:
         repo: "{{ repo_url }}"
         dest: "{{ repo_dest }}"
