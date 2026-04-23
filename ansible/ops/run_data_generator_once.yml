@@ -10,12 +10,15 @@
     image_tag: latest
 
     # Runtime controls
-    run_seconds: "600"
+    run_seconds: "300"
     journeys_per_sec: "2.0"
+    gemspot_rps: "0.2"
     paused: "false"
 
     # Connectivity/runtime env
     generator_api_url: http://ml-api.proj10-platform.svc.cluster.local:8000
+    backend_url: http://proj10-backend.proj10-staging.svc.cluster.local:80
+    gemspot_api_key: ""
     redis_host: redis
     redis_port: "6379"
 
@@ -115,12 +118,18 @@
                   value: "{{ generator_api_url }}"
                 - name: API_BASE_URL
                   value: "{{ generator_api_url }}"
+                - name: BACKEND_URL
+                  value: "{{ backend_url }}"
                 - name: REDIS_HOST
                   value: "{{ redis_host }}"
                 - name: REDIS_PORT
                   value: "{{ redis_port }}"
                 - name: GENERATOR_JOURNEYS_PER_SEC
                   value: "{{ journeys_per_sec }}"
+                - name: GEMSPOT_RPS
+                  value: "{{ gemspot_rps }}"
+                - name: GEMSPOT_API_KEY
+                  value: "{{ gemspot_api_key }}"
                 - name: PAUSED
                   value: "{{ paused }}"
                 - name: GENERATOR_RUN_SECONDS

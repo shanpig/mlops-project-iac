@@ -342,11 +342,19 @@ dataGenerator:
       password: password
       dbname: dbname
   env:
+    GENERATOR_API_URL: "http://ml-api.proj10-platform.svc.cluster.local:8000"
     API_BASE_URL: "http://ml-api.proj10-platform.svc.cluster.local:8000"
+    BACKEND_URL: "http://proj10-backend.proj10-staging.svc.cluster.local:80"
     REDIS_HOST: "redis"
     REDIS_PORT: "6379"
     GENERATOR_JOURNEYS_PER_SEC: "2.0"
+    GEMSPOT_RPS: "0.2"
+    GEMSPOT_API_KEY: ""
     PAUSED: "false"
+  gemspotApiKeySecret:
+    enabled: false
+    name: ""
+    key: "GEMSPOT_API_KEY"
   nodeSelector:
     workload: large
   tolerations:
@@ -370,7 +378,7 @@ batchPipeline:
     tag: latest
   # Keep suspended by default; trigger manually with:
   # kubectl -n proj10-platform create job --from=cronjob/batch-pipeline batch-pipeline-manual-$(date +%s)
-  schedule: "0 6 * * 0"
+  schedule: "0 0 * * *"
   suspend: true
   postgresSecret:
     name: postgres-credentials

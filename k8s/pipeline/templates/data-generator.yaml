@@ -59,12 +59,29 @@ spec:
                       key: {{ .Values.dataGenerator.postgresSecret.keys.dbname | quote }}
                 - name: API_BASE_URL
                   value: {{ .Values.dataGenerator.env.API_BASE_URL | quote }}
+                - name: GENERATOR_API_URL
+                  value: {{ .Values.dataGenerator.env.GENERATOR_API_URL | quote }}
+                - name: BACKEND_URL
+                  value: {{ .Values.dataGenerator.env.BACKEND_URL | quote }}
                 - name: REDIS_HOST
                   value: {{ .Values.dataGenerator.env.REDIS_HOST | quote }}
                 - name: REDIS_PORT
                   value: {{ .Values.dataGenerator.env.REDIS_PORT | quote }}
                 - name: GENERATOR_JOURNEYS_PER_SEC
                   value: {{ .Values.dataGenerator.env.GENERATOR_JOURNEYS_PER_SEC | quote }}
+                - name: GEMSPOT_RPS
+                  value: {{ .Values.dataGenerator.env.GEMSPOT_RPS | quote }}
+                {{- if and .Values.dataGenerator.gemspotApiKeySecret.enabled .Values.dataGenerator.gemspotApiKeySecret.name }}
+                - name: GEMSPOT_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.dataGenerator.gemspotApiKeySecret.name | quote }}
+                      key: {{ .Values.dataGenerator.gemspotApiKeySecret.key | quote }}
+                      optional: true
+                {{- else }}
+                - name: GEMSPOT_API_KEY
+                  value: {{ .Values.dataGenerator.env.GEMSPOT_API_KEY | quote }}
+                {{- end }}
                 - name: PAUSED
                   value: {{ .Values.dataGenerator.env.PAUSED | quote }}
               resources:
