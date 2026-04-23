@@ -104,13 +104,13 @@ spec:
       parameters:
       - name: needs-rebuild
         valueFrom:
-          path: /var/run/argo/outputs/parameters/needs-rebuild
+          path: /tmp/needs-rebuild.txt
       - name: git-commit
         valueFrom:
-          path: /var/run/argo/outputs/parameters/git-commit
+          path: /tmp/git-commit.txt
       - name: batch-commit
         valueFrom:
-          path: /var/run/argo/outputs/parameters/batch-commit
+          path: /tmp/batch-commit.txt
     retryStrategy:
       limit: "5"
       retryPolicy: "Always"
@@ -137,6 +137,19 @@ spec:
       args:
         - |
           set -eu
+
+          OUT_NEEDS="/tmp/needs-rebuild.txt"
+          OUT_GIT="/tmp/git-commit.txt"
+          OUT_BATCH="/tmp/batch-commit.txt"
+
+          # Ensure output parameter files always exist, even on early failure.
+          ensure_outputs() {
+            [ -f "$OUT_NEEDS" ] || echo "true" > "$OUT_NEEDS"
+            [ -f "$OUT_GIT" ] || echo "unknown" > "$OUT_GIT"
+            [ -f "$OUT_BATCH" ] || echo "unknown" > "$OUT_BATCH"
+          }
+          trap ensure_outputs EXIT
+          ensure_outputs
           
           # Install git and curl
           apk add --no-cache git curl jq > /dev/null 2>&1
@@ -217,29 +230,28 @@ spec:
           echo "Image batch git commit label: ${IMAGE_BATCH_COMMIT:-<not found>}"
           echo "Image build flavor label: ${IMAGE_FLAVOR:-<not found>}"
           
-          # Prepare output directory
-          mkdir -p /var/run/argo/outputs/parameters
-          echo "$GIT_COMMIT" > /var/run/argo/outputs/parameters/git-commit
-          echo "$BATCH_COMMIT" > /var/run/argo/outputs/parameters/batch-commit
+          # Update output parameters with resolved commit SHAs
+          echo "$GIT_COMMIT" > "$OUT_GIT"
+          echo "$BATCH_COMMIT" > "$OUT_BATCH"
           
           # Determine if rebuild is needed
           # Always rebuild for non-default branches
           BRANCH="{{inputs.parameters.branch}}"
           if [ "$BRANCH" != "main" ]; then
             echo "Rebuild needed: non-default branch '$BRANCH' specified"
-            echo "true" > /var/run/argo/outputs/parameters/needs-rebuild
+            echo "true" > "$OUT_NEEDS"
           elif [ "${IMAGE_FLAVOR}" != "combined-v2" ]; then
             echo "Rebuild needed: image is missing required combined build flavor"
-            echo "true" > /var/run/argo/outputs/parameters/needs-rebuild
+            echo "true" > "$OUT_NEEDS"
           elif [ -z "$IMAGE_COMMIT" ] || [ "$IMAGE_COMMIT" != "$GIT_COMMIT" ]; then
             echo "Rebuild needed: code has changed or image not found"
-            echo "true" > /var/run/argo/outputs/parameters/needs-rebuild
+            echo "true" > "$OUT_NEEDS"
           elif [ -z "$IMAGE_BATCH_COMMIT" ] || [ "$IMAGE_BATCH_COMMIT" != "$BATCH_COMMIT" ]; then
             echo "Rebuild needed: batch/data repo has changed or image is missing batch commit label"
-            echo "true" > /var/run/argo/outputs/parameters/needs-rebuild
+            echo "true" > "$OUT_NEEDS"
           else
             echo "No rebuild needed: image is up to date"
-            echo "false" > /var/run/argo/outputs/parameters/needs-rebuild
+            echo "false" > "$OUT_NEEDS"
           fi
       volumeMounts:
       - name: workdir
