@@ -23,8 +23,9 @@ spec:
           - |
             set -euo pipefail
 
+            BACKUP_ROOT="/mnt/mlops-backup"
             BACKUP_ID="$(date +%Y%m%d-%H%M%S)"
-            BACKUP_DIR="/mnt/mlops-backup/${BACKUP_ID}"
+            BACKUP_DIR="${BACKUP_ROOT}/${BACKUP_ID}"
 
             mkdir -p "${BACKUP_DIR}/postgres" "${BACKUP_DIR}/minio" "${BACKUP_DIR}/k8s" "${BACKUP_DIR}/argo" "${BACKUP_DIR}/argocd" "${BACKUP_DIR}/infra" "${BACKUP_DIR}/meta"
 
@@ -71,9 +72,20 @@ spec:
             backup_id=${BACKUP_ID}
             backup_timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
             backup_dir=${BACKUP_DIR}
-            backup_root=/mnt/mlops-backup
+            backup_root=${BACKUP_ROOT}
             generated_by=argo/workflows/cron-backup.yaml
             EOF
+
+            # Keep only the newest 3 backups to control disk usage.
+            EXISTING_BACKUPS="$(find "${BACKUP_ROOT}" -mindepth 1 -maxdepth 1 -type d -name '20??????-??????' -printf '%f\n' | sort)"
+            BACKUP_COUNT="$(printf "%s\n" "${EXISTING_BACKUPS}" | sed '/^$/d' | wc -l | tr -d ' ')"
+            if [ "${BACKUP_COUNT}" -gt 3 ]; then
+              DELETE_COUNT="$((BACKUP_COUNT - 3))"
+              printf "%s\n" "${EXISTING_BACKUPS}" | sed '/^$/d' | head -n "${DELETE_COUNT}" | while read -r OLD_BACKUP; do
+                rm -rf "${BACKUP_ROOT}/${OLD_BACKUP}"
+                echo "Pruned old backup: ${BACKUP_ROOT}/${OLD_BACKUP}"
+              done
+            fi
 
             echo "Backup completed: ${BACKUP_DIR}"
         volumeMounts:
