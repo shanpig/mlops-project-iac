@@ -356,8 +356,8 @@ dataGenerator:
     GEMSPOT_API_KEY: ""
     PAUSED: "false"
   gemspotApiKeySecret:
-    enabled: false
-    name: ""
+    enabled: true
+    name: "gemspot-api"
     key: "GEMSPOT_API_KEY"
   nodeSelector:
     workload: large
