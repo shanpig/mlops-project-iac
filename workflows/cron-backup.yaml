@@ -1,0 +1,146 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: backup-everything
+  namespace: argo
+spec:
+  entrypoint: backup
+  templates:
+    - name: backup
+      nodeSelector:
+        kubernetes.io/hostname: node1
+      serviceAccountName: backup-everything
+      volumes:
+        - name: backup-host
+          hostPath:
+            path: /mnt/mlops-backup
+            type: DirectoryOrCreate
+      container:
+        name: backup
+        image: bitnami/kubectl:1.30
+        command: ["sh", "-c"]
+        args:
+          - |
+            set -euo pipefail
+
+            BACKUP_ID="$(date +%Y%m%d-%H%M%S)"
+            BACKUP_DIR="/mnt/mlops-backup/${BACKUP_ID}"
+
+            mkdir -p "${BACKUP_DIR}/postgres" "${BACKUP_DIR}/minio" "${BACKUP_DIR}/k8s" "${BACKUP_DIR}/argo" "${BACKUP_DIR}/argocd" "${BACKUP_DIR}/infra" "${BACKUP_DIR}/meta"
+
+            for NS in proj10-staging proj10-canary proj10-production; do
+              POD="$(kubectl -n "$NS" get pod -l app=proj10-postgres -o jsonpath='{.items[0].metadata.name}')"
+              PW="$(kubectl -n "$NS" get secret proj10-adventurelog-secrets -o jsonpath='{.data.POSTGRES_PASSWORD}' | base64 -d)"
+              kubectl -n "$NS" exec "$POD" -- sh -lc "PGPASSWORD='$PW' pg_dump -U 'adventure' -d 'database' -Fc" > "${BACKUP_DIR}/postgres/${NS}_database.dump"
+            done
+
+            AK="$(kubectl -n proj10-platform get secret minio-credentials -o jsonpath='{.data.accesskey}' | base64 -d)"
+            SK="$(kubectl -n proj10-platform get secret minio-credentials -o jsonpath='{.data.secretkey}' | base64 -d)"
+
+            for BUCKET in agent-datalake mlflow-artifacts; do
+              kubectl -n proj10-platform run "mc-backup-${BUCKET}" --rm -i --restart=Never --pod-running-timeout=10m \
+                --image=alpine:3.19 \
+                --env="AWS_ACCESS_KEY_ID=${AK}" --env="AWS_SECRET_ACCESS_KEY=${SK}" \
+                --command -- sh -lc '
+                  set -euo pipefail
+                  apk add --no-cache ca-certificates curl tar >/dev/null
+                  curl -fsSL -o /usr/local/bin/mc https://dl.min.io/client/mc/release/linux-amd64/mc
+                  chmod +x /usr/local/bin/mc
+                  mc alias set m http://minio.proj10-platform.svc.cluster.local:9000 "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" >/dev/null
+                  mc mb -p "m/'"${BUCKET}"'" >/dev/null 2>&1 || true
+                  mc mirror --overwrite "m/'"${BUCKET}"'" "/tmp/'"${BUCKET}"'" >/dev/null
+                  tar -C /tmp -czf - "'"${BUCKET}"'"
+                ' > "${BACKUP_DIR}/minio/${BUCKET}.tgz"
+            done
+
+            kubectl get workflowtemplates.argoproj.io -n argo -o yaml > "${BACKUP_DIR}/argo/workflowtemplates.yaml"
+            kubectl get cronworkflows.argoproj.io -n argo -o yaml > "${BACKUP_DIR}/argo/cronworkflows.yaml"
+            kubectl get workflows.argoproj.io -n argo -o yaml > "${BACKUP_DIR}/argo/workflows.yaml"
+            kubectl get applications.argoproj.io -n argocd -o yaml > "${BACKUP_DIR}/argocd/applications.yaml"
+
+            for NS in proj10-platform proj10-staging proj10-canary proj10-production; do
+              kubectl get all,cm,secret,pvc,sa,role,rolebinding,ingress,httproute,gateway -n "$NS" -o yaml > "${BACKUP_DIR}/k8s/${NS}.yaml" || true
+            done
+
+            kubectl get nodes -o wide > "${BACKUP_DIR}/infra/nodes.txt"
+            kubectl get nodes -o json > "${BACKUP_DIR}/infra/nodes.json"
+            kubectl get sc,pv,pvc -A -o yaml > "${BACKUP_DIR}/infra/storage.yaml"
+            kubectl get ns -o yaml > "${BACKUP_DIR}/infra/namespaces.yaml"
+
+            cat > "${BACKUP_DIR}/BACKUP_REFERENCE.txt" <<EOF
+            backup_id=${BACKUP_ID}
+            backup_timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            backup_dir=${BACKUP_DIR}
+            backup_root=/mnt/mlops-backup
+            generated_by=argo/workflows/cron-backup.yaml
+            EOF
+
+            echo "Backup completed: ${BACKUP_DIR}"
+        volumeMounts:
+          - name: backup-host
+            mountPath: /mnt/mlops-backup
+---
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: cron-backup
+  namespace: argo
+spec:
+  # Daily at 03:20 UTC
+  schedule: "20 3 * * *"
+  timezone: "UTC"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  workflowSpec:
+    serviceAccountName: backup-everything
+    workflowTemplateRef:
+      name: backup-everything
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-everything
+  namespace: argo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: backup-everything
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "pods/exec", "secrets", "configmaps", "services", "persistentvolumeclaims", "serviceaccounts", "nodes", "namespaces"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways", "httproutes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtemplates", "cronworkflows", "workflows", "workflowtaskresults", "applications"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backup-everything
+subjects:
+  - kind: ServiceAccount
+    name: backup-everything
+    namespace: argo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: backup-everything

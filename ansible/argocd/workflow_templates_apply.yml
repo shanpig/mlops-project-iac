@@ -32,6 +32,7 @@
       - train-model.yaml
       - test-staging.yaml
       - cron-train.yaml
+      - cron-backup.yaml
 
   tasks:
     - name: Ensure remote workflow staging directory exists
