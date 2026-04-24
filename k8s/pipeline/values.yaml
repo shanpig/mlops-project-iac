@@ -124,7 +124,7 @@ streamConsumerWatchdog:
   enabled: true
   name: stream-consumer-watchdog
   image:
-    repository: registry.k8s.io/kubectl
+    repository: rancher/kubectl
     tag: "v1.30.4"
   schedule: "*/2 * * * *"
   suspend: false
