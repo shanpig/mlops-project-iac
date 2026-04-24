@@ -120,6 +120,35 @@ streamConsumer:
       cpu: "500m"
       memory: "1Gi"
 
+streamConsumerWatchdog:
+  enabled: true
+  name: stream-consumer-watchdog
+  image:
+    repository: bitnami/kubectl
+    tag: "1.30"
+  schedule: "*/2 * * * *"
+  suspend: false
+  targetNamespace: proj10-platform
+  targetDeployment: stream-consumer
+  lookbackWindow: "5m"
+  logTailLines: 500
+  errorPattern: "connection already closed"
+  restartThreshold: 20
+  nodeSelector:
+    workload: large
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: large
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: "20m"
+      memory: "64Mi"
+    limits:
+      cpu: "100m"
+      memory: "128Mi"
+
 monitoring:
   enabled: true
 

@@ -1,0 +1,88 @@
+{{- if and .Values.streamConsumer.enabled .Values.streamConsumerWatchdog.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.streamConsumerWatchdog.name }}
+  namespace: {{ .Values.namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.streamConsumerWatchdog.name }}
+  namespace: {{ .Values.streamConsumerWatchdog.targetNamespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.streamConsumerWatchdog.name }}
+  namespace: {{ .Values.streamConsumerWatchdog.targetNamespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.streamConsumerWatchdog.name }}
+    namespace: {{ .Values.namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.streamConsumerWatchdog.name }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.streamConsumerWatchdog.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  schedule: {{ .Values.streamConsumerWatchdog.schedule | quote }}
+  suspend: {{ .Values.streamConsumerWatchdog.suspend }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: {{ .Values.streamConsumerWatchdog.name }}
+          restartPolicy: Never
+          {{- with .Values.streamConsumerWatchdog.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.streamConsumerWatchdog.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: watchdog
+              image: {{ .Values.streamConsumerWatchdog.image.repository }}:{{ .Values.streamConsumerWatchdog.image.tag }}
+              imagePullPolicy: IfNotPresent
+              command: ["sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  NS={{ .Values.streamConsumerWatchdog.targetNamespace }}
+                  DEPLOY={{ .Values.streamConsumerWatchdog.targetDeployment }}
+                  WINDOW={{ .Values.streamConsumerWatchdog.lookbackWindow | quote }}
+                  TAIL={{ .Values.streamConsumerWatchdog.logTailLines }}
+                  PATTERN={{ .Values.streamConsumerWatchdog.errorPattern | quote }}
+                  THRESHOLD={{ .Values.streamConsumerWatchdog.restartThreshold }}
+
+                  COUNT="$(kubectl -n "${NS}" logs "deploy/${DEPLOY}" --since="${WINDOW}" --tail="${TAIL}" 2>/dev/null | grep -c "${PATTERN}" || true)"
+                  echo "stream-consumer watchdog: pattern='${PATTERN}' count=${COUNT} threshold=${THRESHOLD}"
+
+                  if [ "${COUNT}" -ge "${THRESHOLD}" ]; then
+                    TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                    kubectl -n "${NS}" patch deployment "${DEPLOY}" --type='merge' \
+                      -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"watchdog/restarted-at\":\"${TS}\"}}}}}"
+                    echo "Restart triggered for deployment/${DEPLOY} at ${TS}"
+                  else
+                    echo "No restart required"
+                  fi
+              resources:
+                {{- toYaml .Values.streamConsumerWatchdog.resources | nindent 16 }}
+{{- end }}
