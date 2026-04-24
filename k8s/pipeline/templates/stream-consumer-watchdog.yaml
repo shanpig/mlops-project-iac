@@ -48,7 +48,7 @@ spec:
     spec:
       backoffLimit: 0
       activeDeadlineSeconds: 120
-      ttlSecondsAfterFinished: 300
+      ttlSecondsAfterFinished: {{ .Values.streamConsumerWatchdog.ttlSecondsAfterFinished | default 86400 }}
       template:
         spec:
           serviceAccountName: {{ .Values.streamConsumerWatchdog.name }}
