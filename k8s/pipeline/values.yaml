@@ -134,13 +134,9 @@ streamConsumerWatchdog:
   logTailLines: 500
   errorPattern: "connection already closed"
   restartThreshold: 20
-  nodeSelector:
-    workload: large
-  tolerations:
-    - key: dedicated
-      operator: Equal
-      value: large
-      effect: NoSchedule
+  # Keep watchdog schedulable on any healthy node (it does not need large workers).
+  nodeSelector: {}
+  tolerations: []
   resources:
     requests:
       cpu: "20m"
