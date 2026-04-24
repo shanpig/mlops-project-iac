@@ -124,8 +124,8 @@ streamConsumerWatchdog:
   enabled: true
   name: stream-consumer-watchdog
   image:
-    repository: rancher/kubectl
-    tag: "v1.30.4"
+    repository: alpine
+    tag: "3.19"
   schedule: "*/2 * * * *"
   suspend: false
   targetNamespace: proj10-platform
@@ -339,6 +339,10 @@ etlJob:
   env:
     ENDPOINT_URL: "http://minio.proj10-platform.svc.cluster.local:9000"
     ETL_NROWS: "1000"
+  markovModel:
+    bucket: "agent-datalake"
+    key: "vibe_models/vibe_markov_models.json"
+    region: "us-east-1"
   nodeSelector:
     workload: large
   tolerations:
@@ -370,6 +374,11 @@ dataGenerator:
       username: username
       password: password
       dbname: dbname
+  minioSecret:
+    name: minio-credentials
+    keys:
+      accessKey: accesskey
+      secretKey: secretkey
   env:
     GENERATOR_API_URL: "http://ml-api.proj10-platform.svc.cluster.local:8000"
     API_BASE_URL: "http://ml-api.proj10-platform.svc.cluster.local:8000"
@@ -380,6 +389,12 @@ dataGenerator:
     GEMSPOT_RPS: "0.2"
     GEMSPOT_API_KEY: ""
     PAUSED: "false"
+  markovModel:
+    enabled: true
+    endpointUrl: "http://minio.proj10-platform.svc.cluster.local:9000"
+    bucket: "agent-datalake"
+    key: "vibe_models/vibe_markov_models.json"
+    region: "us-east-1"
   gemspotApiKeySecret:
     enabled: true
     name: "gemspot-api"

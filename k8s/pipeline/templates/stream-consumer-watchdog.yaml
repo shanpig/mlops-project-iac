@@ -69,6 +69,10 @@ spec:
               args:
                 - |
                   set -eu
+                  apk add --no-cache ca-certificates curl >/dev/null
+                  curl -fsSL -o /usr/local/bin/kubectl https://dl.k8s.io/release/v1.30.4/bin/linux/amd64/kubectl
+                  chmod +x /usr/local/bin/kubectl
+
                   NS={{ .Values.streamConsumerWatchdog.targetNamespace }}
                   DEPLOY={{ .Values.streamConsumerWatchdog.targetDeployment }}
                   WINDOW={{ .Values.streamConsumerWatchdog.lookbackWindow | quote }}
