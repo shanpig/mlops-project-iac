@@ -124,8 +124,8 @@ streamConsumerWatchdog:
   enabled: true
   name: stream-consumer-watchdog
   image:
-    repository: bitnami/kubectl
-    tag: "1.30"
+    repository: registry.k8s.io/kubectl
+    tag: "v1.30.4"
   schedule: "*/2 * * * *"
   suspend: false
   targetNamespace: proj10-platform
