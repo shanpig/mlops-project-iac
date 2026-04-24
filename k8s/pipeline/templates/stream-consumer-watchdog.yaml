@@ -40,11 +40,15 @@ metadata:
 spec:
   schedule: {{ .Values.streamConsumerWatchdog.schedule | quote }}
   suspend: {{ .Values.streamConsumerWatchdog.suspend }}
-  concurrencyPolicy: Forbid
+  # Replace stale/blocked runs so watchdog keeps running on schedule.
+  concurrencyPolicy: Replace
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 120
+      ttlSecondsAfterFinished: 300
       template:
         spec:
           serviceAccountName: {{ .Values.streamConsumerWatchdog.name }}
