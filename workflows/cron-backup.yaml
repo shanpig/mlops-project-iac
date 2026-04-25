@@ -17,11 +17,14 @@ spec:
             type: DirectoryOrCreate
       container:
         name: backup
-        image: bitnami/kubectl:1.30
+        image: alpine:3.19
         command: ["sh", "-c"]
         args:
           - |
             set -euo pipefail
+            apk add --no-cache ca-certificates curl >/dev/null
+            curl -fsSL -o /usr/local/bin/kubectl https://dl.k8s.io/release/v1.30.4/bin/linux/amd64/kubectl
+            chmod +x /usr/local/bin/kubectl
 
             BACKUP_ROOT="/mnt/mlops-backup"
             BACKUP_ID="$(date +%Y%m%d-%H%M%S)"
