@@ -1,0 +1,43 @@
+---
+- name: Build and push backup-tools image for cron-backup workflow
+  hosts: node1
+  become: yes
+  vars:
+    registry_host: registry.kube-system.svc.cluster.local:5000
+    image_name: proj10-backup-tools
+    image_tag: latest
+    build_dir: /tmp/proj10-backup-tools-image
+
+  tasks:
+    - name: Ensure build directory exists
+      file:
+        path: "{{ build_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write Dockerfile for backup-tools image
+      copy:
+        dest: "{{ build_dir }}/Dockerfile"
+        mode: "0644"
+        content: |
+          FROM alpine:3.19
+          RUN apk add --no-cache ca-certificates curl tar bash \
+           && curl -fsSL -o /usr/local/bin/kubectl https://dl.k8s.io/release/v1.30.4/bin/linux/amd64/kubectl \
+           && chmod +x /usr/local/bin/kubectl \
+           && curl -fsSL -o /usr/local/bin/mc https://dl.min.io/client/mc/release/linux-amd64/mc \
+           && chmod +x /usr/local/bin/mc
+
+    - name: Build and push backup-tools image
+      shell: |
+        set -euo pipefail
+        IMAGE="{{ registry_host }}/{{ image_name }}:{{ image_tag }}"
+        docker build -t "${IMAGE}" "{{ build_dir }}"
+        docker push "${IMAGE}"
+      args:
+        executable: /bin/bash
+      register: build_push_result
+      changed_when: true
+
+    - name: Show pushed image reference
+      debug:
+        msg: "Pushed image {{ registry_host }}/{{ image_name }}:{{ image_tag }}"

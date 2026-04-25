@@ -17,14 +17,11 @@ spec:
             type: DirectoryOrCreate
       container:
         name: backup
-        image: alpine:3.19
+        image: registry.kube-system.svc.cluster.local:5000/proj10-backup-tools:latest
         command: ["sh", "-c"]
         args:
           - |
             set -euo pipefail
-            apk add --no-cache ca-certificates curl >/dev/null
-            curl -fsSL -o /usr/local/bin/kubectl https://dl.k8s.io/release/v1.30.4/bin/linux/amd64/kubectl
-            chmod +x /usr/local/bin/kubectl
 
             BACKUP_ROOT="/mnt/mlops-backup"
             BACKUP_ID="$(date +%Y%m%d-%H%M%S)"
@@ -43,13 +40,10 @@ spec:
 
             for BUCKET in agent-datalake mlflow-artifacts; do
               kubectl -n proj10-platform run "mc-backup-${BUCKET}" --rm -i --restart=Never --pod-running-timeout=10m \
-                --image=alpine:3.19 \
+                --image=registry.kube-system.svc.cluster.local:5000/proj10-backup-tools:latest \
                 --env="AWS_ACCESS_KEY_ID=${AK}" --env="AWS_SECRET_ACCESS_KEY=${SK}" \
                 --command -- sh -lc '
                   set -euo pipefail
-                  apk add --no-cache ca-certificates curl tar >/dev/null
-                  curl -fsSL -o /usr/local/bin/mc https://dl.min.io/client/mc/release/linux-amd64/mc
-                  chmod +x /usr/local/bin/mc
                   mc alias set m http://minio.proj10-platform.svc.cluster.local:9000 "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" >/dev/null
                   mc mb -p "m/'"${BUCKET}"'" >/dev/null 2>&1 || true
                   mc mirror --overwrite "m/'"${BUCKET}"'" "/tmp/'"${BUCKET}"'" >/dev/null
