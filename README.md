@@ -94,7 +94,15 @@ cd /Users/shanpig/Desktop/projects/nyu/mlops/iac
 ansible-playbook -i ./inventory.yml ./pre_k8s/pre_k8s_configure.yml -b -u cc
 ansible-playbook -i ./k8s/inventory/mycluster/hosts.yaml ./k8s/kubespray/cluster.yml -b -u cc
 ansible-playbook -i ./inventory.yml ./post_k8s/post_k8s_configure.yml -b -u cc
+ansible-playbook -i ./inventory.yml ./ops/dedicate_ml_node.yml -b -u cc
 ```
+
+`dedicate_ml_node.yml` is required for workflows that schedule with:
+
+- `nodeSelector: workload=large`
+- toleration for `dedicated=large:NoSchedule`
+
+If this step is skipped, ML/training workflow pods can remain `Pending` with scheduling errors.
 
 Scale-out (example: add one node):
 
