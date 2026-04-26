@@ -91,10 +91,10 @@ Run from repo root:
 
 ```bash
 cd /Users/shanpig/Desktop/projects/nyu/mlops/iac
-ansible-playbook -i ./inventory.yml ./pre_k8s/pre_k8s_configure.yml -b -u cc
+ansible-playbook -i ./inventory.yml ./pre_k8s/pre_k8s_configure.yml -b -u cc --ask-vault-pass
 ansible-playbook -i ./k8s/inventory/mycluster/hosts.yaml ./k8s/kubespray/cluster.yml -b -u cc
-ansible-playbook -i ./inventory.yml ./post_k8s/post_k8s_configure.yml -b -u cc
-ansible-playbook -i ./inventory.yml ./ops/dedicate_ml_node.yml -b -u cc
+ansible-playbook -i ./inventory.yml ./post_k8s/post_k8s_configure.yml -b -u cc --ask-vault-pass
+ansible-playbook -i ./inventory.yml ./ops/dedicate_ml_node.yml -b -u cc --ask-vault-pass
 ```
 
 `dedicate_ml_node.yml` is required for workflows that schedule with:
@@ -131,7 +131,7 @@ Use `.env` in repo root as source values.
 
 ```bash
 cd /Users/shanpig/Desktop/projects/nyu/mlops/iac
-ansible-playbook ./secrets/prepare_k8s_secrets.yml
+ansible-playbook -i ./inventory.yml ./secrets/prepare_k8s_secrets.yml --ask-vault-pass
 
 # 0) In remote node, copy the kubeconfig and change permission for scp
 sudo cp /etc/kubernetes/admin.conf /home/cc/admin.conf && sudo chown cc:cc /home/cc/admin.conf && chmod 600 /home/cc/admin.conf
@@ -161,7 +161,7 @@ ansible-playbook -i ./inventory.yml ./secrets/seal_k8s_secrets.yml --ask-vault-p
 ### 6.3 Apply sealed secrets to cluster
 
 ```bash
-ansible-playbook -i ./inventory.yml ./secrets/apply_k8s_secrets.yml
+ansible-playbook -i ./inventory.yml ./secrets/apply_k8s_secrets.yml --ask-vault-pass
 ```
 
 ## 7) Deploy Namespaces, Platform, Services, Apps, Workflows
