@@ -81,8 +81,8 @@ Quick validation:
 
 ```bash
 cd /Users/shanpig/Desktop/projects/nyu/mlops/iac
-ansible -i ansible/inventory.yml all -m ping -u cc
-ansible-inventory -i ansible/k8s/inventory/mycluster/hosts.yaml --graph
+ansible -i ./inventory.yml all -m ping -u cc
+ansible-inventory -i ./k8s/inventory/mycluster/hosts.yaml --graph
 ```
 
 ## 5) Bootstrap Kubernetes Cluster
@@ -91,16 +91,16 @@ Run from repo root:
 
 ```bash
 cd /Users/shanpig/Desktop/projects/nyu/mlops/iac
-ansible-playbook -i ansible/inventory.yml ansible/pre_k8s/pre_k8s_configure.yml -b -u cc
-ansible-playbook -i ansible/k8s/inventory/mycluster/hosts.yaml ansible/k8s/kubespray/cluster.yml -b -u cc
-ansible-playbook -i ansible/inventory.yml ansible/post_k8s/post_k8s_configure.yml -b -u cc
+ansible-playbook -i ./inventory.yml ./pre_k8s/pre_k8s_configure.yml -b -u cc
+ansible-playbook -i ./k8s/inventory/mycluster/hosts.yaml ./k8s/kubespray/cluster.yml -b -u cc
+ansible-playbook -i ./inventory.yml ./post_k8s/post_k8s_configure.yml -b -u cc
 ```
 
 Scale-out (example: add one node):
 
 ```bash
-ansible-playbook -i ansible/inventory.yml ansible/pre_k8s/pre_k8s_configure.yml -b -u cc --limit node4
-ansible-playbook -i ansible/k8s/inventory/mycluster/hosts.yaml ansible/k8s/kubespray/scale.yml -b -u cc --limit node4
+ansible-playbook -i ./inventory.yml ./pre_k8s/pre_k8s_configure.yml -b -u cc --limit node4
+ansible-playbook -i ./k8s/inventory/mycluster/hosts.yaml ./k8s/kubespray/scale.yml -b -u cc --limit node4
 ```
 
 ## 6) Install Sealed Secrets + Generate/Apply Secrets
@@ -123,7 +123,7 @@ Use `.env` in repo root as source values.
 
 ```bash
 cd /Users/shanpig/Desktop/projects/nyu/mlops/iac
-ansible-playbook ansible/secrets/prepare_k8s_secrets.yml
+ansible-playbook ./secrets/prepare_k8s_secrets.yml
 
 # 0) In remote node, copy the kubeconfig and change permission for scp
 sudo cp /etc/kubernetes/admin.conf /home/cc/admin.conf && sudo chown cc:cc /home/cc/admin.conf && chmod 600 /home/cc/admin.conf
@@ -147,13 +147,13 @@ kubectl get nodes
 kubectl -n kube-system get deploy,svc | grep -i sealed || true
 
 # 6) seal secrets
-ansible-playbook ansible/secrets/seal_k8s_secrets.yml
+ansible-playbook -i ./inventory.yml ./secrets/seal_k8s_secrets.yml --ask-vault-pass
 ```
 
 ### 6.3 Apply sealed secrets to cluster
 
 ```bash
-ansible-playbook -i ansible/inventory.yml ansible/secrets/apply_k8s_secrets.yml
+ansible-playbook -i ./inventory.yml ./secrets/apply_k8s_secrets.yml
 ```
 
 ## 7) Deploy Namespaces, Platform, Services, Apps, Workflows
@@ -162,12 +162,12 @@ Run these playbooks in order:
 
 ```bash
 cd /Users/shanpig/Desktop/projects/nyu/mlops/iac
-ansible-playbook -i ansible/inventory.yml ansible/argocd/argocd_add_platform.yml --ask-vault-pass
-ansible-playbook -i ansible/inventory.yml ansible/argocd/argocd_add_pipeline.yml --ask-vault-pass
-ansible-playbook -i ansible/inventory.yml ansible/argocd/argocd_add_staging.yml --ask-vault-pass
-ansible-playbook -i ansible/inventory.yml ansible/argocd/argocd_add_canary.yml --ask-vault-pass
-ansible-playbook -i ansible/inventory.yml ansible/argocd/argocd_add_prod.yml --ask-vault-pass
-ansible-playbook -i ansible/inventory.yml ansible/argocd/workflow_templates_apply.yml --ask-vault-pass
+ansible-playbook -i ./inventory.yml ./argocd/argocd_add_platform.yml --ask-vault-pass
+ansible-playbook -i ./inventory.yml ./argocd/argocd_add_pipeline.yml --ask-vault-pass
+ansible-playbook -i ./inventory.yml ./argocd/argocd_add_staging.yml --ask-vault-pass
+ansible-playbook -i ./inventory.yml ./argocd/argocd_add_canary.yml --ask-vault-pass
+ansible-playbook -i ./inventory.yml ./argocd/argocd_add_prod.yml --ask-vault-pass
+ansible-playbook -i ./inventory.yml ./argocd/workflow_templates_apply.yml --ask-vault-pass
 ```
 
 This applies Argo workflow templates including:
@@ -185,21 +185,21 @@ This applies Argo workflow templates including:
 Build backup-tools image used by `cron-backup`:
 
 ```bash
-ansible-playbook -i ansible/inventory.yml ansible/ops/build_backup_tools_image.yml
+ansible-playbook -i ./inventory.yml ./ops/build_backup_tools_image.yml
 ```
 
 Optional initial image/workflow bootstrap:
 
 ```bash
-ansible-playbook -i ansible/inventory.yml ansible/argocd/workflow_build_ml_services_init.yml --ask-vault-pass
-ansible-playbook -i ansible/inventory.yml ansible/argocd/workflow_build_training_init.yml --ask-vault-pass
-ansible-playbook -i ansible/inventory.yml ansible/argocd/workflow_build_init.yml --ask-vault-pass
+ansible-playbook -i ./inventory.yml ./argocd/workflow_build_ml_services_init.yml --ask-vault-pass
+ansible-playbook -i ./inventory.yml ./argocd/workflow_build_training_init.yml --ask-vault-pass
+ansible-playbook -i ./inventory.yml ./argocd/workflow_build_init.yml --ask-vault-pass
 ```
 
 Optional: seed Argo source cache PVC from local repos (helps when GitHub network is flaky):
 
 ```bash
-ansible-playbook -i ansible/inventory.yml ansible/ops/seed_argo_source_cache.yml
+ansible-playbook -i ./inventory.yml ./ops/seed_argo_source_cache.yml
 ```
 
 ## 9) Backup and Restore
@@ -257,7 +257,7 @@ Important:
 ### 9.1 Create backup
 
 ```bash
-ansible-playbook -i ansible/inventory.yml ansible/ops/backup_everything.yml
+ansible-playbook -i ./inventory.yml ./ops/backup_everything.yml
 ```
 
 ### 9.2 Restore data to rebuilt cluster
@@ -265,7 +265,7 @@ ansible-playbook -i ansible/inventory.yml ansible/ops/backup_everything.yml
 Use backup ID from `/mnt/mlops-backup/<backup_id>`.
 
 ```bash
-ansible-playbook -i ansible/inventory.yml ansible/ops/restore_everything.yml \
+ansible-playbook -i ./inventory.yml ./ops/restore_everything.yml \
   -e "backup_id=<backup_id> restore_postgres=true restore_minio=true restore_argo_state=false restore_argocd_apps=false"
 ```
 
@@ -281,14 +281,14 @@ Enable either flag only when you intentionally want object-state replay from bac
 Run one-shot data generator job:
 
 ```bash
-ansible-playbook -i ansible/inventory.yml ansible/ops/run_data_generator_once.yml \
+ansible-playbook -i ./inventory.yml ./ops/run_data_generator_once.yml \
   -e "run_seconds=600 journeys_per_sec=2.0 gemspot_rps=0.2"
 ```
 
 Run one-shot ETL metrics backfill:
 
 ```bash
-ansible-playbook -i ansible/inventory.yml ansible/ops/run_etl_metrics_backfill_once.yml --ask-vault-pass
+ansible-playbook -i ./inventory.yml ./ops/run_etl_metrics_backfill_once.yml --ask-vault-pass
 ```
 
 ## 11) Verification Checklist
@@ -319,7 +319,7 @@ Also validate:
 - ArgoCD sync says operation already in progress:
   terminate in-flight op and retry.
 - Workflow/Git clone DNS failures:
-  use `ansible/ops/seed_argo_source_cache.yml` to avoid hard dependency on live GitHub access.
+  use `./ops/seed_argo_source_cache.yml` to avoid hard dependency on live GitHub access.
 - `ImagePullBackOff` on public tags:
   pin to image tags that exist, or build/push into internal registry first.
 
