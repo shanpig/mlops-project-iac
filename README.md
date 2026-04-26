@@ -124,6 +124,29 @@ Use `.env` in repo root as source values.
 ```bash
 cd /Users/shanpig/Desktop/projects/nyu/mlops/iac
 ansible-playbook ansible/secrets/prepare_k8s_secrets.yml
+
+# 0) In remote node, copy the kubeconfig and change permission for scp
+sudo cp /etc/kubernetes/admin.conf /home/cc/admin.conf && sudo chown cc:cc /home/cc/admin.conf && chmod 600 /home/cc/admin.conf
+
+# 1) keep tunnel open (terminal A)
+ssh -i ~/.ssh/id_rsa_chameleon -N -L 16443:127.0.0.1:6443 cc@129.114.25.166
+
+# 2) pull fresh kubeconfig from NEW cluster node1 (terminal B)
+scp -i ~/.ssh/id_rsa_chameleon cc@129.114.24.249:/home/cc/admin.conf ~/.kube/proj10-new-admin.conf
+chmod 600 ~/.kube/proj10-new-admin.conf
+
+# 3) use that kubeconfig and point server to tunnel
+export KUBECONFIG=~/.kube/proj10-new-admin.conf
+
+# 4) make sure to set the current kubectl config as the remote k8s cluster
+CLUSTER_NAME=$(kubectl config view --minify -o jsonpath='{.contexts[0].context.cluster}')
+kubectl config set-cluster "$CLUSTER_NAME" --server=https://127.0.0.1:16443 --insecure-skip-tls-verify=true
+
+# 5) verify access
+kubectl get nodes
+kubectl -n kube-system get deploy,svc | grep -i sealed || true
+
+# 6) seal secrets
 ansible-playbook ansible/secrets/seal_k8s_secrets.yml
 ```
 
@@ -180,6 +203,56 @@ ansible-playbook -i ansible/inventory.yml ansible/ops/seed_argo_source_cache.yml
 ```
 
 ## 9) Backup and Restore
+
+### 9.0 Mount / Remount / Unmount backup volume
+
+Use this when moving the persistent backup volume across rebuilt clusters.
+
+Inspect block devices:
+
+```bash
+lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINT
+```
+
+Mount the volume on `node1` (example device `/dev/vdb`):
+
+```bash
+sudo mkdir -p /mnt/mlops-backup
+sudo mount /dev/vdb /mnt/mlops-backup
+df -h | grep mlops-backup
+```
+
+Persist mount across reboot:
+
+```bash
+echo '/dev/vdb /mnt/mlops-backup ext4 defaults,nofail 0 2' | sudo tee -a /etc/fstab
+sudo mount -a
+```
+
+Remount after changes to `/etc/fstab` or mount options:
+
+```bash
+sudo umount /mnt/mlops-backup
+sudo mount /mnt/mlops-backup
+```
+
+Unmount before detaching volume from the node:
+
+```bash
+sudo sync
+sudo umount /mnt/mlops-backup
+```
+
+Clean up stale fstab entry if this node will no longer mount that disk:
+
+```bash
+sudo sed -i.bak '\# /mnt/mlops-backup #d' /etc/fstab
+```
+
+Important:
+
+- Do not run `mkfs` on an existing backup disk.
+- Always `umount` cleanly before detaching in OpenStack.
 
 ### 9.1 Create backup
 
