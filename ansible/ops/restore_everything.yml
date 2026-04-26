@@ -138,7 +138,9 @@
         NS="{{ item }}"
         FILE="{{ backup_dir }}/${NS}/{{ github_auth_secret_name }}.yaml"
         if test -f "$FILE"; then
-          kubectl apply -f "$FILE"
+          # Avoid "object has been modified" conflicts from apply/patch by recreating atomically.
+          kubectl -n "$NS" delete secret "{{ github_auth_secret_name }}" --ignore-not-found
+          kubectl -n "$NS" create -f "$FILE"
           echo "Restored $FILE"
         else
           echo "No backup manifest found for $NS/{{ github_auth_secret_name }}, skipping"
