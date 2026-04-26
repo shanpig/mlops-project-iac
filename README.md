@@ -277,6 +277,12 @@ ansible-playbook -i ./inventory.yml ./ops/restore_everything.yml --ask-vault-pas
   -e "backup_id=<backup_id> restore_postgres=true restore_minio=true restore_argo_state=false restore_argocd_apps=false"
 ```
 
+Nimtable reliability note:
+
+- `restore_everything.yml` now includes `restore_nimtable_db=true` by default.
+- It recreates Nimtable's application DB (from `nimtable-secrets` DB URL, fallback `nimtable_catalog`) and restarts `nimtable` + `nimtable-web`.
+- This avoids the Flyway/schema conflict loop seen during rebuilds when old catalog tables exist.
+
 Why keep `restore_argo_state=false restore_argocd_apps=false` by default:
 
 - Avoid reapplying stale workflow/app objects that can conflict with current repo state.
