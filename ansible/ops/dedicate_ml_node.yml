@@ -1,9 +1,9 @@
 ---
-- name: Dedicate node3 for ML training/inference workloads
+- name: Dedicate node4 for ML training/inference workloads
   hosts: node1
   become: yes
   vars:
-    ml_node_name: node3
+    ml_node_name: node4
     ml_node_label_key: workload
     ml_node_label_value: large
     ml_node_taint: dedicated=large:NoSchedule
