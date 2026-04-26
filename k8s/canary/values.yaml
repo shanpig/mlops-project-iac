@@ -21,6 +21,11 @@ backend:
   service:
     port: 8000
     nginxPort: 80
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: large
+      effect: NoSchedule
   resources:
     limits:
       cpu: "500m"
