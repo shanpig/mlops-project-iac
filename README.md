@@ -265,7 +265,7 @@ Important:
 ### 9.1 Create backup
 
 ```bash
-ansible-playbook -i ./inventory.yml ./ops/backup_everything.yml
+ansible-playbook -i ./inventory.yml ./ops/backup_everything.yml --ask-vault-pass
 ```
 
 ### 9.2 Restore data to rebuilt cluster
@@ -273,7 +273,7 @@ ansible-playbook -i ./inventory.yml ./ops/backup_everything.yml
 Use backup ID from `/mnt/mlops-backup/<backup_id>`.
 
 ```bash
-ansible-playbook -i ./inventory.yml ./ops/restore_everything.yml \
+ansible-playbook -i ./inventory.yml ./ops/restore_everything.yml --ask-vault-pass \
   -e "backup_id=<backup_id> restore_postgres=true restore_minio=true restore_argo_state=false restore_argocd_apps=false"
 ```
 
