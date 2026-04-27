@@ -42,7 +42,7 @@
           - source_pod.stdout | trim | length > 0
         fail_msg: "Could not find source Postgres pod in {{ source_namespace }}"
 
-    - name: Clone source DB into each target namespace
+    - name: Clone source DB into each target namespace (file-based restore)
       shell: |
         set -euo pipefail
         SRC_NS="{{ source_namespace }}"
@@ -50,6 +50,13 @@
         SRC_POD="{{ source_pod.stdout | trim }}"
         DB_USER="{{ db_user }}"
         DB_NAME="{{ db_name }}"
+        LOCAL_DUMP="/tmp/${SRC_NS}_to_${TGT_NS}_${DB_NAME}.dump"
+        REMOTE_DUMP="/tmp/${SRC_NS}_to_${TGT_NS}_${DB_NAME}.dump"
+
+        cleanup() {
+          rm -f "$LOCAL_DUMP" || true
+        }
+        trap cleanup EXIT
 
         TGT_POD="$(kubectl -n "$TGT_NS" get pod -l {{ postgres_pod_label }} -o jsonpath='{.items[0].metadata.name}')"
         if [ -z "$TGT_POD" ]; then
@@ -60,10 +67,15 @@
         SRC_PW="$(kubectl -n "$SRC_NS" get secret {{ app_secret_name }} -o jsonpath='{.data.{{ app_secret_password_key }}}' | base64 -d)"
         TGT_PW="$(kubectl -n "$TGT_NS" get secret {{ app_secret_name }} -o jsonpath='{.data.{{ app_secret_password_key }}}' | base64 -d)"
 
+        # Use custom dump + copy + pg_restore to avoid flaky kubectl stream truncation.
         kubectl -n "$SRC_NS" exec "$SRC_POD" -- sh -lc \
-          "PGPASSWORD='$SRC_PW' pg_dump -U '$DB_USER' -d '$DB_NAME' --clean --if-exists --no-owner --no-privileges" \
-        | kubectl -n "$TGT_NS" exec -i "$TGT_POD" -- sh -lc \
-          "PGPASSWORD='$TGT_PW' psql -v ON_ERROR_STOP=1 -U '$DB_USER' -d '$DB_NAME'"
+          "PGPASSWORD='$SRC_PW' pg_dump -U '$DB_USER' -d '$DB_NAME' -Fc --no-owner --no-privileges" \
+          > "$LOCAL_DUMP"
+        test -s "$LOCAL_DUMP"
+
+        kubectl -n "$TGT_NS" cp "$LOCAL_DUMP" "$TGT_POD:$REMOTE_DUMP"
+        kubectl -n "$TGT_NS" exec "$TGT_POD" -- sh -lc \
+          "PGPASSWORD='$TGT_PW' pg_restore -U '$DB_USER' -d '$DB_NAME' --clean --if-exists --no-owner --no-privileges '$REMOTE_DUMP' && rm -f '$REMOTE_DUMP'"
       args:
         executable: /bin/bash
       loop: "{{ target_namespaces }}"
