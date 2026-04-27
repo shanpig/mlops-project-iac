@@ -4,6 +4,8 @@ metadata:
   name: build-container-image
 spec:
   entrypoint: buildkit-rootless-build-flow
+  ttlStrategy:
+    secondsAfterCompletion: 259200
   arguments:
     parameters:
     - name: model-version

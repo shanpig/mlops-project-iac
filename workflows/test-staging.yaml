@@ -4,6 +4,8 @@ metadata:
   name: test-staging
 spec:
   entrypoint: test-flow
+  ttlStrategy:
+    secondsAfterCompletion: 259200
   arguments:
     parameters:
     - name: model-version

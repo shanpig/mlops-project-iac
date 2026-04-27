@@ -4,6 +4,8 @@ metadata:
   name: train-model
 spec:
   entrypoint: training-and-build
+  ttlStrategy:
+    secondsAfterCompletion: 259200
   arguments:
     parameters:
     - name: branch
