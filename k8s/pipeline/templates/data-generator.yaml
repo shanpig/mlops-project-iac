@@ -12,6 +12,7 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      ttlSecondsAfterFinished: {{ .Values.dataGenerator.ttlSecondsAfterFinished | default 86400 }}
       template:
         spec:
           restartPolicy: Never

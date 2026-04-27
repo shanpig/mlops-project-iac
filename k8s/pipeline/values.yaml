@@ -132,8 +132,8 @@ streamConsumerWatchdog:
   targetDeployment: stream-consumer
   lookbackWindow: "5m"
   logTailLines: 500
-  errorPattern: "connection already closed"
-  restartThreshold: 20
+  errorPattern: "connection already closed|server closed the connection unexpectedly|OperationalError|could not receive data from client|SSL connection has been closed unexpectedly"
+  restartThreshold: 3
   ttlSecondsAfterFinished: 7200
   # Keep watchdog schedulable on any healthy node (it does not need large workers).
   nodeSelector: {}
@@ -369,6 +369,7 @@ dataGenerator:
   schedule: "*/60 * * * *"
   suspend: false
   runSeconds: "300"
+  ttlSecondsAfterFinished: 86400
   postgresSecret:
     name: postgres-credentials
     keys:

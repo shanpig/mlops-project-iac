@@ -69,10 +69,6 @@ spec:
               args:
                 - |
                   set -eu
-                  apk add --no-cache ca-certificates curl >/dev/null
-                  curl -fsSL -o /usr/local/bin/kubectl https://dl.k8s.io/release/v1.30.4/bin/linux/amd64/kubectl
-                  chmod +x /usr/local/bin/kubectl
-
                   NS={{ .Values.streamConsumerWatchdog.targetNamespace }}
                   DEPLOY={{ .Values.streamConsumerWatchdog.targetDeployment }}
                   WINDOW={{ .Values.streamConsumerWatchdog.lookbackWindow | quote }}
@@ -80,7 +76,7 @@ spec:
                   PATTERN={{ .Values.streamConsumerWatchdog.errorPattern | quote }}
                   THRESHOLD={{ .Values.streamConsumerWatchdog.restartThreshold }}
 
-                  COUNT="$(kubectl -n "${NS}" logs "deploy/${DEPLOY}" --since="${WINDOW}" --tail="${TAIL}" 2>/dev/null | grep -c "${PATTERN}" || true)"
+                  COUNT="$(kubectl -n "${NS}" logs "deploy/${DEPLOY}" --since="${WINDOW}" --tail="${TAIL}" 2>/dev/null | grep -E -c "${PATTERN}" || true)"
                   echo "stream-consumer watchdog: pattern='${PATTERN}' count=${COUNT} threshold=${THRESHOLD}"
 
                   if [ "${COUNT}" -ge "${THRESHOLD}" ]; then
