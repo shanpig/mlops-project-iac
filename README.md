@@ -290,6 +290,22 @@ Why keep `restore_argo_state=false restore_argocd_apps=false` by default:
 
 Enable either flag only when you intentionally want object-state replay from backup files.
 
+### 9.3 Backfill ETL metrics (Grafana/Pushgateway) after restore
+
+After a fresh rebuild/restore, ETL dashboards can be empty even when services are healthy.  
+Run the one-shot ETL backfill job to repopulate metrics without rerunning full ETL:
+
+```bash
+ansible-playbook -i ./inventory.yml ./ops/run_etl_metrics_backfill_once.yml --ask-vault-pass
+```
+
+Quick validation:
+
+```bash
+kubectl -n proj10-platform logs -f job/$(kubectl -n proj10-platform get jobs --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1:].metadata.name}')
+kubectl -n proj10-platform run pgw-check --rm -it --restart=Never --image=curlimages/curl -- sh -lc 'curl -s http://pushgateway.proj10-platform.svc.cluster.local:9091/metrics | grep etl_'
+```
+
 ## 10) Post-Deploy Ops Playbooks
 
 Run one-shot data generator job:
