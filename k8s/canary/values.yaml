@@ -61,9 +61,9 @@ service:
   externalIP: ""
 
 app:
-  publicUrl: "http://129.114.25.166:8081"
-  frontendUrl: "http://129.114.25.166:8081"
-  csrfTrustedOrigins: "http://129.114.25.166:8081"
+  publicUrl: "http://129.114.24.249:8081"
+  frontendUrl: "http://129.114.24.249:8081"
+  csrfTrustedOrigins: "http://129.114.24.249:8081"
   frontendBodySizeLimit: "Infinity"
   mlServingUrl: "http://ml-serving.proj10-platform.svc.cluster.local:8000"
   mlApiUrl: "http://ml-api.proj10-platform.svc.cluster.local:8000"
