@@ -383,7 +383,7 @@ dataGenerator:
   env:
     GENERATOR_API_URL: "http://ml-api.proj10-platform.svc.cluster.local:8000"
     API_BASE_URL: "http://ml-api.proj10-platform.svc.cluster.local:8000"
-    BACKEND_URL: "http://proj10-backend.proj10-staging.svc.cluster.local:80"
+    BACKEND_URL: "http://proj10-backend.proj10-production.svc.cluster.local:80"
     REDIS_HOST: "redis"
     REDIS_PORT: "6379"
     GENERATOR_JOURNEYS_PER_SEC: "2.0"

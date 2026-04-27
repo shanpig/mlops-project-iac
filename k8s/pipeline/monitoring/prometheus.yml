@@ -33,11 +33,11 @@ scrape_configs:
     static_configs:
       - targets: ['ml-serving:8000']
 
-  # GemSpot app-level feedback metrics exposed by Django app (staging)
+  # GemSpot app-level feedback metrics exposed by Django app (production)
   - job_name: 'gemspot-app'
     metrics_path: /api/gemspot/metrics/
     static_configs:
-      - targets: ['proj10-backend.proj10-staging.svc.cluster.local:80']
+      - targets: ['proj10-backend.proj10-production.svc.cluster.local:80']
 
   # Self-scrape for Prometheus health and capacity
   - job_name: 'prometheus'

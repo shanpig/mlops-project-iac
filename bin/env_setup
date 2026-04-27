@@ -110,7 +110,7 @@ function render_secrets_from_templates {
     local platform_postgres_host
     platform_postgres_host="$(get_env PLATFORM_POSTGRES_HOST)"
     if [ -z "$platform_postgres_host" ] || [ "$platform_postgres_host" = "postgres" ]; then
-        platform_postgres_host="proj10-postgres.proj10-staging.svc.cluster.local"
+        platform_postgres_host="proj10-postgres.proj10-production.svc.cluster.local"
         echo "PLATFORM_POSTGRES_HOST is empty or set to 'postgres'. Falling back to ${platform_postgres_host} for secret rendering."
     fi
     local nimtable_postgres_dbname

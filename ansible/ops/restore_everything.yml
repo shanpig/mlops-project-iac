@@ -51,7 +51,7 @@
     nimtable_secret_name: nimtable-secrets
     nimtable_db_url_field: NIMTABLE_DATABASE_URL
     nimtable_default_dbname: nimtable_catalog
-    nimtable_db_namespace: proj10-staging
+    nimtable_db_namespace: proj10-production
     nimtable_postgres_pod_label: app=proj10-postgres
     nimtable_postgres_secret_name: proj10-adventurelog-secrets
     nimtable_postgres_password_key: POSTGRES_PASSWORD

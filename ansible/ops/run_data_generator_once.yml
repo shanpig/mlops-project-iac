@@ -17,7 +17,7 @@
 
     # Connectivity/runtime env
     generator_api_url: http://ml-api.proj10-platform.svc.cluster.local:8000
-    backend_url: http://proj10-backend.proj10-staging.svc.cluster.local:80
+    backend_url: http://proj10-backend.proj10-production.svc.cluster.local:80
     gemspot_api_key: ""
     redis_host: redis
     redis_port: "6379"
