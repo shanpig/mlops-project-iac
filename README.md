@@ -306,6 +306,50 @@ kubectl -n proj10-platform logs -f job/$(kubectl -n proj10-platform get jobs --s
 kubectl -n proj10-platform run pgw-check --rm -it --restart=Never --image=curlimages/curl -- sh -lc 'curl -s http://pushgateway.proj10-platform.svc.cluster.local:9091/metrics | grep etl_'
 ```
 
+### 9.4 Restore/upload Markov model JSON (data-generator dependency)
+
+Run this after `restore_everything.yml` and before generator smoke tests.
+
+1. Put the file on `node1` (example):
+
+```bash
+ls -l /tmp/vibe_markov_models.json
+```
+
+2. Upload to MinIO canonical key used by the pipeline (`agent-datalake/vibe_models/vibe_markov_models.json`):
+
+```bash
+AK=$(kubectl -n proj10-platform get secret minio-credentials -o jsonpath='{.data.accesskey}' | base64 -d)
+SK=$(kubectl -n proj10-platform get secret minio-credentials -o jsonpath='{.data.secretkey}' | base64 -d)
+
+cat /tmp/vibe_markov_models.json | kubectl -n proj10-platform run markov-upload --rm -i --restart=Never \
+  --image=registry.kube-system.svc.cluster.local:5000/proj10-backup-tools:latest \
+  --env="AWS_ACCESS_KEY_ID=$AK" --env="AWS_SECRET_ACCESS_KEY=$SK" \
+  --command -- sh -lc '
+    set -euo pipefail
+    mc alias set m http://minio.proj10-platform.svc.cluster.local:9000 "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" >/dev/null
+    mc cp - "m/agent-datalake/vibe_models/vibe_markov_models.json" >/dev/null
+    mc stat "m/agent-datalake/vibe_models/vibe_markov_models.json"
+  '
+```
+
+3. Verify key exists:
+
+```bash
+kubectl -n proj10-platform run markov-check --rm -it --restart=Never \
+  --image=registry.kube-system.svc.cluster.local:5000/proj10-backup-tools:latest \
+  --env="AWS_ACCESS_KEY_ID=$AK" --env="AWS_SECRET_ACCESS_KEY=$SK" \
+  --command -- sh -lc '
+    set -euo pipefail
+    mc alias set m http://minio.proj10-platform.svc.cluster.local:9000 "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" >/dev/null
+    mc stat "m/agent-datalake/vibe_models/vibe_markov_models.json"
+  '
+```
+
+Note:
+
+- If `data-generator` still logs `Could not load Markov models ... /app/data/vibe_markov_models.json`, the running image is not reading from MinIO at startup and needs file mounting (ConfigMap/volume) or image-level preload.
+
 ## 10) Post-Deploy Ops Playbooks
 
 Run one-shot data generator job:
