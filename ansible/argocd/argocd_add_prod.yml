@@ -7,6 +7,7 @@
     repo_url: https://github.com/shanpig/mlops-project-iac.git
     app_path: k8s/production
     argocd_namespace: argocd
+    app_port: 8080
 
   tasks:
 
@@ -27,9 +28,22 @@
         --grpc-web --port-forward --port-forward-namespace={{ argocd_namespace }}
       changed_when: false
 
-    - name: Detect external IP starting with 10.56
+    - name: Read floating IP from Terraform output (controller-side)
+      delegate_to: localhost
+      become: false
+      command: terraform -chdir=../tf/kvm output -raw floating_ip_out
+      register: tf_floating_ip
+      failed_when: false
+      changed_when: false
+
+    - name: Detect fallback external IP starting with 10.56
       set_fact:
-        external_ip: "{{ ansible_all_ipv4_addresses | select('match', '^10\\.56\\..*') | list | first }}"
+        external_ip_fallback: "{{ ansible_all_ipv4_addresses | select('match', '^10\\.56\\..*') | list | first }}"
+
+    - name: Select external IP for service exposure and app URLs
+      set_fact:
+        external_ip: "{{ (tf_floating_ip.stdout | default('') | trim) if (tf_floating_ip.rc is defined and tf_floating_ip.rc == 0 and (tf_floating_ip.stdout | trim) != '') else external_ip_fallback }}"
+        app_public_url: "http://{{ (tf_floating_ip.stdout | default('') | trim) if (tf_floating_ip.rc is defined and tf_floating_ip.rc == 0 and (tf_floating_ip.stdout | trim) != '') else external_ip_fallback }}:{{ app_port }}"
 
     - name: Create proj10-production namespace if missing
       command: kubectl create namespace proj10-production
@@ -57,6 +71,9 @@
         --dest-server https://kubernetes.default.svc \
         --dest-namespace "" \
         --helm-set-string service.externalIP={{ external_ip }} \
+        --helm-set-string app.publicUrl={{ app_public_url }} \
+        --helm-set-string app.frontendUrl={{ app_public_url }} \
+        --helm-set-string app.csrfTrustedOrigins={{ app_public_url }} \
         --sync-policy automated --self-heal \
         --port-forward --port-forward-namespace={{ argocd_namespace }}
 
@@ -65,6 +82,9 @@
       command: >
         argocd app set {{ app_name }} \
         --helm-set-string service.externalIP={{ external_ip }} \
+        --helm-set-string app.publicUrl={{ app_public_url }} \
+        --helm-set-string app.frontendUrl={{ app_public_url }} \
+        --helm-set-string app.csrfTrustedOrigins={{ app_public_url }} \
         --port-forward --port-forward-namespace={{ argocd_namespace }}
 
     - name: Display ArgoCD app status
