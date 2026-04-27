@@ -310,13 +310,20 @@ kubectl -n proj10-platform run pgw-check --rm -it --restart=Never --image=curlim
 
 Run this after `restore_everything.yml` and before generator smoke tests.
 
-1. Put the file on `node1` (example):
+1. Start from local file, then copy it to `node1`:
+
+```bash
+# run from your local machine
+scp -i ~/.ssh/id_rsa_chameleon /path/to/vibe_markov_models.json cc@<node1_public_ip>:/tmp/vibe_markov_models.json
+```
+
+2. SSH to `node1` and confirm file exists:
 
 ```bash
 ls -l /tmp/vibe_markov_models.json
 ```
 
-2. Upload to MinIO canonical key used by the pipeline (`agent-datalake/vibe_models/vibe_markov_models.json`):
+3. Upload to MinIO canonical key used by the pipeline (`agent-datalake/vibe_models/vibe_markov_models.json`):
 
 ```bash
 AK=$(kubectl -n proj10-platform get secret minio-credentials -o jsonpath='{.data.accesskey}' | base64 -d)
@@ -333,7 +340,7 @@ cat /tmp/vibe_markov_models.json | kubectl -n proj10-platform run markov-upload 
   '
 ```
 
-3. Verify key exists:
+4. Verify key exists:
 
 ```bash
 kubectl -n proj10-platform run markov-check --rm -it --restart=Never \
